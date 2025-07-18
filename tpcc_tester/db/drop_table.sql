@@ -1,0 +1,9 @@
+DROP TABLE warehouse;
+DROP TABLE item;
+DROP TABLE stock;
+DROP TABLE district;
+DROP TABLE customer;
+DROP TABLE history;
+DROP TABLE orders;
+DROP TABLE new_orders;
+DROP TABLE order_line;

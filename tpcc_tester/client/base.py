@@ -1,9 +1,9 @@
 import logging
+from enum import Enum
 from abc import ABC, abstractmethod
 from typing import Callable
 
 from tpcc_tester.common import ServerState, Result, setup_logging
-
 
 # Operator
 ALL = '*'
@@ -25,12 +25,43 @@ LT = '<'
 GE = '>='
 LE = '<='
 
+class ClientType(Enum):
+    RMDB = 'rmdb'
+    MYSQL = 'mysql'
+    SLT = 'slt'
+    SQL = 'sql'
+
 class DBClient(ABC):
+    @staticmethod
+    def from_type(client_type: ClientType):
+        from tpcc_tester.client.rmdb_client import RMDBClient
+        from tpcc_tester.client.mysql_client import MySQLClient
+        from tpcc_tester.client.slt_client import SLTClient
+        from tpcc_tester.client.sql_client import SQLClient
+
+        if client_type == ClientType.RMDB:
+            return RMDBClient()
+        elif client_type == ClientType.MYSQL:
+            return MySQLClient()
+        elif client_type == ClientType.SLT:
+            return SLTClient()
+        elif client_type == ClientType.SQL:
+            return SQLClient()
+        else:
+            raise ValueError(f'Invalid client type: {client_type}')
+
     def __init__(self, db: str, port: int):
         self.db = db
         self.port = port
         self.logger = setup_logging(self.__class__.__name__)
-        self.sql_logger = setup_logging(self.logger.name + '.Sql', console_level=logging.ERROR, file_level=logging.DEBUG)
+        self.sql_logger = setup_logging(
+            self.logger.name + '.Sql',
+            console_level=logging.ERROR,
+            file_level=logging.DEBUG,
+            console_formatter='%(message)s',
+            file_formatter='%(message)s',
+            log_file=f'{self.logger.name}.log.sql'
+        )
 
     @abstractmethod
     def connect(self) -> ServerState:
@@ -47,15 +78,17 @@ class DBClient(ABC):
     def log_record(func: Callable[..., Result]):
         def wrapper(self: 'DBClient', *args, **kwargs):
             result = func(self, *args, **kwargs)
-            self.append_record(args[0], result.result_str)
+            self.append_record(args[0], result)
             return result
         return wrapper
 
-    def append_record(self, sql: str, output: str) -> None:
-        self.sql_logger.info(f"SQL: {sql}")
-        self.sql_logger.info(f"OUTPUT: {output}")
-        self.sql_logger.info("-" * 50)
-        pass
+    def append_record(self, sql: str, result: Result) -> None:
+        self.sql_logger.info(f"{sql}")
+        self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
+        if result.state == ServerState.ERROR:
+            raise Exception(result.result_str)
+
+        # self.sql_logger.info("-" * 50)
 
     @abstractmethod
     @log_record

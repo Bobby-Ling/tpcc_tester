@@ -61,7 +61,7 @@ class MySQLClient(DBClient):
             return result
         except Exception as e:
             self.logger.error(f"Error executing SQL: {e}")
-            return Result(ServerState.ABORT, [], [], str(e))
+            return Result(ServerState.ERROR, [], [], str(e), e)
 
     def _format_result(self, result_data) -> str:
         if not result_data:

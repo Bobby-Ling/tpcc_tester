@@ -51,13 +51,13 @@ class RMDBClient(DBClient):
                 self.logger.warning("Connection closed by server")
                 return Result(ServerState.DOWN, [], [], "Connection closed")
 
-            result_str = recv_buf.decode()
+            result_str = recv_buf.decode().replace("\x00", "")
 
             # 解析结果状态
             if result_str.startswith('abort') or result_str.startswith('ABORT'):
                 return Result(ServerState.ABORT, [], [], result_str)
             elif result_str.startswith('Error') or result_str.startswith('ERROR'):
-                return Result(ServerState.ABORT, [], [], result_str)
+                return Result(ServerState.ERROR, [], [], result_str)
             else:
                 # 解析查询结果
                 raw_data = self._parse_query_result(result_str)
@@ -67,7 +67,7 @@ class RMDBClient(DBClient):
 
         except Exception as e:
             self.logger.error(f"Error sending command: {e}")
-            return Result(ServerState.ABORT, [], [], str(e))
+            return Result(ServerState.ERROR, [], [], str(e), e)
 
     def _parse_query_result(self, result_str: str) -> List[List[Any]]:
         """解析查询结果字符串为结构化数据"""
