@@ -1,0 +1,54 @@
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/warehouse.csv' into table warehouse
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/item.csv' into table item
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/stock.csv' into table stock
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/district.csv' into table district
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/customer.csv' into table customer
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/history.csv' into table history
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/orders.csv' into table orders
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/new_orders.csv' into table new_orders
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+
+load data local infile '/home/bobby_ubuntu/Git/Git/MyProjects/Database/db2025/rmdb/test/tpcc-generator/tpcc_csv_no_header/order_line.csv' into table order_line
+fields terminated by ','
+optionally enclosed by '"'
+escaped by '"'
+lines terminated by '\n';
+

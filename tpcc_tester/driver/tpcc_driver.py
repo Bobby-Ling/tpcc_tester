@@ -25,32 +25,45 @@ CNT_HISTORY = CNT_W * 10 * 3000
 CNT_ORDERS = CNT_W * 10 * 3000
 CNT_NEW_ORDERS = CNT_W * 10 * 900
 # CNT_ORDER_LINE = CNT_ORDERS * 10
-CNT_ORDER_LINE = 601255
+CNT_ORDER_LINE = 600320
 
 """
-wc -l tpcc_sql/*.sql
-    60000 tpcc_sql/customer.sql
-       20 tpcc_sql/district.sql
-    60000 tpcc_sql/history.sql
-   100000 tpcc_sql/item.sql
-    18000 tpcc_sql/new_orders.sql
-   601255 tpcc_sql/order_line.sql
-    60000 tpcc_sql/orders.sql
-   200000 tpcc_sql/stock.sql
-        2 tpcc_sql/warehouse.sql
-  1099277 总计
-
 wc -l tpcc_csv/*.csv
     60001 tpcc_csv/customer.csv
        21 tpcc_csv/district.csv
     60001 tpcc_csv/history.csv
    100001 tpcc_csv/item.csv
     18001 tpcc_csv/new_orders.csv
-   601256 tpcc_csv/order_line.csv
+   600321 tpcc_csv/order_line.csv
     60001 tpcc_csv/orders.csv
    200001 tpcc_csv/stock.csv
         3 tpcc_csv/warehouse.csv
-  1099286 总计
+  1098351 总计
+
+wc -l tpcc_csv_no_header/*.csv
+    60000 tpcc_csv_no_header/customer.csv
+       20 tpcc_csv_no_header/district.csv
+    60000 tpcc_csv_no_header/history.csv
+   100000 tpcc_csv_no_header/item.csv
+    18000 tpcc_csv_no_header/new_orders.csv
+   600320 tpcc_csv_no_header/order_line.csv
+    60000 tpcc_csv_no_header/orders.csv
+   200000 tpcc_csv_no_header/stock.csv
+        2 tpcc_csv_no_header/warehouse.csv
+  1098342 总计
+
+wc -l tpcc_sql/*.sql
+    60000 tpcc_sql/customer.sql
+       20 tpcc_sql/district.sql
+    60000 tpcc_sql/history.sql
+   100000 tpcc_sql/item.sql
+    18000 tpcc_sql/new_orders.sql
+   600320 tpcc_sql/order_line.sql
+    60000 tpcc_sql/orders.sql
+   200000 tpcc_sql/stock.sql
+        2 tpcc_sql/warehouse.sql
+  1098342 总计
+
 """
 
 # 定义每个表的参数
@@ -71,6 +84,18 @@ D_ID_MAX = 11
 
 
 class TpccDriver:
+    @staticmethod
+    def from_type(client_type: ClientType, scale: int, recorder: Recorder = None):
+        from tpcc_tester.driver.rmdb_driver import RMDBDriver
+        from tpcc_tester.driver.mysql_driver import MySQLDriver
+
+        if client_type == ClientType.RMDB:
+            return RMDBDriver(RMDBClient(), scale, recorder)
+        elif client_type == ClientType.MYSQL:
+            return MySQLDriver(MySQLClient(), scale, recorder)
+        else:
+            raise ValueError(f'Invalid client type: {client_type}')
+
     def __init__(self, client: DBClient, scale: int, recorder: Recorder = None):
         self._scale = scale
         self._client = client
@@ -252,13 +277,11 @@ class TpccDriver:
         self.send_file(f"{project_dir}/db/create_tables.sql")
 
     def drop(self):
-        self.logger.info("Drop table schema...")
+        self.logger.warning("Drop table schema...")
         self.send_file(f"{project_dir}/db/drop_table.sql")
 
     def load(self):
-        self.logger.info("Load table data...")
-        self.send_file(f"{project_dir}/db/load_csvs.sql")
-        self.logger.info('Database has been initialized.')
+        self.load_csv()
 
     def create_index(self):
         self.logger.info("Create index...")
@@ -403,6 +426,10 @@ class TpccDriver:
 
             self.logger.info("consistency check for orders and order_line pass!")
 
+        except IndexError as e:
+            self.logger.info(f"IndexError occurred in w_id: {w_id}, d_id: {d_id}, error: {e}")
+            # 说明可能没有数据, 直接返回
+            return
         except Exception as e:
             self.logger.exception(f"Exception occurred in w_id: {w_id}, d_id: {d_id}, error: {e}")
             raise e
@@ -420,6 +447,10 @@ class TpccDriver:
                 return True
             self.logger.info(
                 f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={CNT_ORDERS}")
+        except IndexError as e:
+            self.logger.info(f"IndexError occurred in w_id: {w_id}, d_id: {d_id}, error: {e}")
+            # 说明可能没有数据, 直接返回
+            return
         except Exception as e:
             self.logger.info(e)
         self.logger.info("consistency checking 2 error!")

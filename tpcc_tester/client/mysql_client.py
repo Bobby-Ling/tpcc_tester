@@ -23,8 +23,13 @@ class MySQLClient(DBClient):
                 password=self.password,
                 port=self.port,
                 charset='utf8mb4',
-                autocommit=True
+                autocommit=True,
+                local_infile=True, # for load data local infile
             )
+
+            # sudo vim /etc/mysql/mysql.conf.d/mysqld.cnf
+            # apppend local_infile=1 in [mysqld] section
+            # sudo systemctl restart mysql
 
             self.connection.cursor().execute(f"CREATE DATABASE IF NOT EXISTS {self.db};")
             self.connection.cursor().execute(f"USE {self.db};")
@@ -60,7 +65,7 @@ class MySQLClient(DBClient):
             self.logger.debug("exec sql: %s, result: %s", sql, result)
             return result
         except Exception as e:
-            self.logger.error(f"Error executing SQL: {e}")
+            self.logger.error(f"Error executing SQL: {sql} error: {e}")
             return Result(ServerState.ERROR, [], [], str(e), e)
 
     def _format_result(self, result_data) -> str:

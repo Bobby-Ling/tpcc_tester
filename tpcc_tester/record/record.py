@@ -119,7 +119,7 @@ class Recorder:
         plt.ylabel('Number of New-Orders')
         plt.xlabel('Time unit: second')
         plt.savefig(f'{project_dir}/result/timecost_and_num_of_NewOrders.jpg')
-        plt.show()
+        # plt.show()
 
         # 删除数据库文件
         if os.path.exists(f'{project_dir}/result/rds.db'):

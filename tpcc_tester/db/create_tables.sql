@@ -74,7 +74,7 @@ CREATE TABLE customer
     c_ytd_payment  float,
     c_payment_cnt  int,
     c_delivery_cnt int,
-    c_data         char(300)
+    c_data         char(255)
 );
 CREATE TABLE history
 (

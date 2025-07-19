@@ -28,22 +28,25 @@ class TestRunner:
         self.client_type = client_type
         self.logger = setup_logging(f"{self.__class__.__name__}")
 
-    def clean(self):
+    def clean(self, drop_db: bool = False):
         shutil.rmtree(f'{project_dir}/result')
         os.mkdir(f'{project_dir}/result')
-        driver = TpccDriver(DBClient.from_type(self.client_type), scale=1, recorder=None)
-        try:
-            driver.drop()
-        except:
-            pass
+        driver = TpccDriver.from_type(self.client_type, scale=1, recorder=None)
+        if drop_db:
+            try:
+                driver.drop()
+            except:
+                pass
 
     def prepare(self):
         # Driver是每次任务一个
-        driver = TpccDriver(DBClient.from_type(self.client_type), scale=1, recorder=self.recorder)
+        driver = TpccDriver.from_type(self.client_type, scale=1, recorder=self.recorder)
         driver.build()  # 创建9个tables
         # driver.send_sql_from_dir(f'{project_dir}/../../tpcc-generator/tpcc_sql/')
         # driver.send_file(f'{project_dir}/../../tpcc-generator/demo.sql')
-        driver.load_csv()  # loading 阶段
+
+        driver.load_data()
+
         driver.count_star()
         driver.consistency_check()  # 一致性校验
         # driver.build()  # 创建9个tables
@@ -54,7 +57,7 @@ class TestRunner:
     def test(self, tid, txns=150, txn_prob=None):
         self.logger.info(f'+ Test_{tid} Begin')
         # Driver每个线程一个
-        driver = TpccDriver(DBClient.from_type(self.client_type), scale=CNT_W, recorder=self.recorder)
+        driver = TpccDriver.from_type(self.client_type, scale=CNT_W, recorder=self.recorder)
         driver.run_test(txns, txn_prob)
         self.logger.info(f'- Test_{tid} Finished')
         driver.delay_close()
@@ -64,23 +67,33 @@ def main():
     parser = argparse.ArgumentParser(description='Python Script with Thread Number Argument')
     parser.add_argument('--prepare', action='store_true', help='Enable prepare mode')
     parser.add_argument('--analyze', action='store_true', help='Enable analyze mode')
+    parser.add_argument('--clean', action='store_true', help='Clean database(execlude with other options)')
     parser.add_argument('--rw', type=int, help='Read write transaction phase time')
     parser.add_argument('--ro', type=int, help='Read only transaction phase time')
     parser.add_argument('--thread', type=int, help='Thread number')
     parser.add_argument('--client', type=str, default='rmdb', choices=['rmdb', 'mysql', 'slt', 'sql'], help='Client type')
 
     args = parser.parse_args()
-    prepare = args.prepare
-    analyze = args.analyze
-    rw = args.rw
-    ro = args.ro
-    thread_num = args.thread
+    prepare: bool = args.prepare
+    analyze: bool = args.analyze
+    clean: bool = args.clean
+    rw: int = args.rw
+    ro: int = args.ro
+    thread_num: int = args.thread
     client_type = ClientType(args.client)
+
+    print(f"prepare: {prepare}, analyze: {analyze}, clean: {clean}, rw: {rw}, ro: {ro}, thread: {thread_num}, client: {client_type}")
 
     recorder = Recorder(f'{project_dir}/result/rds.db')
     runner = TestRunner(recorder, client_type)
-    runner.clean()
 
+    if clean:
+        print("clean all tables!!!")
+        runner.clean(drop_db=True)
+        return
+
+    # 有perpare说明要drop表
+    runner.clean(drop_db=prepare)
     if prepare:
         lt1 = time.time()
         runner.prepare()
@@ -111,7 +124,7 @@ def main():
                 process_list[i].join()
         t3 = time.time()
 
-    driver = TpccDriver(client, scale=CNT_W, recorder=None)
+    driver = TpccDriver.from_type(client_type, scale=CNT_W, recorder=None)
     driver.consistency_check()
 
     new_order_success = recorder.output_result()
