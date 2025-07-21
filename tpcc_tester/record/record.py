@@ -25,9 +25,9 @@ name = {NewOrder: 'New Order', Payment: 'Payment', Delivery: 'Delivery', OrderSt
 class Recorder:
     def __init__(self, db_path: str):
         self.logger = setup_logging(f"{__name__}")
-        db_dir = pathlib.Path(self.db_path).parent
-        if not os.path.exists(db_dir):
-            os.makedirs(db_dir)
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path.unlink(missing_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.logger.debug(f"db_path: {self.db_path}")
         self.lock = threading.Lock()
@@ -42,6 +42,11 @@ class Recorder:
                             (StockLevel, 0, 0, 0)])
         cursor.execute('insert into new_order_txn(no, time) values(?,?);', (0, 0))
         self.conn.commit()
+
+    def drop_db(self):
+        self.logger.debug(f"drop_db: {self.db_path}")
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
 
     def put_new_order(self, time: float):
         self.lock.acquire()
@@ -130,8 +135,12 @@ class Recorder:
         # plt.show()
 
         # 删除数据库文件
-        if os.path.exists(f'{project_dir}/result/rds.db'):
-            os.remove(f'{project_dir}/result/rds.db')
+        self.drop_db()
 
         # 返回 new order 成功数量
         return result[0]['success']
+
+_recorder = Recorder(f'{project_dir}/result/rds.db')
+
+def get_recorder_instance():
+    return _recorder

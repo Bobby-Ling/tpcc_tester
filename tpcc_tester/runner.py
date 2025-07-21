@@ -14,11 +14,9 @@ project_dir = file_dir
 sys.path.append(str(project_dir.parent))
 
 from tpcc_tester.client import *
-from tpcc_tester.record.record import Recorder
+from tpcc_tester.record.record import Recorder, get_recorder_instance
 from tpcc_tester.driver.tpcc_driver import CNT_W, TpccDriver
 from tpcc_tester.common import setup_logging
-
-
 
 # TestRunner只需要一个就行
 class TestRunner:
@@ -29,8 +27,8 @@ class TestRunner:
         self.logger = setup_logging(f"{__name__}")
 
     def clean(self, drop_db: bool = False):
-        shutil.rmtree(f'{project_dir}/result')
-        os.mkdir(f'{project_dir}/result')
+        # shutil.rmtree(f'{project_dir}/result')
+        # os.mkdir(f'{project_dir}/result')
         driver = TpccDriver.from_type(self.client_type, scale=1, recorder=None)
         if drop_db:
             try:
@@ -84,7 +82,7 @@ def main():
 
     print(f"prepare: {prepare}, analyze: {analyze}, clean: {clean}, rw: {rw}, ro: {ro}, thread: {thread_num}, client: {client_type}")
 
-    recorder = Recorder(f'{project_dir}/result/rds.db')
+    recorder = get_recorder_instance()
     runner = TestRunner(recorder, client_type)
 
     if clean:
