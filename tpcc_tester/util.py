@@ -2,10 +2,10 @@ import datetime
 import random
 import string
 
-# _names = ['BAR', 'OUGHT', 'ABLE', 'PRI', 'PRES', 'ESE', 'ANTI', 'CALLY', 'ATION', 'EING']
-_names = ['BARR', 'OUGH', 'ABLE', 'PRII', 'PRES', 'ESEE', 'ANTI', 'CALL', 'ATIO', 'EING']
-_C_LOAD = 117
-_C_RUN = 191
+_names = ['BAR', 'OUGHT', 'ABLE', 'PRI', 'PRES', 'ESE', 'ANTI', 'CALLY', 'ATION', 'EING']
+# _names = ['BARR', 'OUGH', 'ABLE', 'PRII', 'PRES', 'ESEE', 'ANTI', 'CALL', 'ATIO', 'EING']
+_C_LOAD = 42
+_C_RUN = 42
 
 
 def rand_str(lower, upper=0):
@@ -37,8 +37,7 @@ def rand_perm(max):
 
 
 def NURand(A, x, y, C):
-    return (((random.randrange(0, A) | random.randrange(x, y)) + C) % (y - x)) + x  # y-1 = y
-
+    return ((random.randrange(0, A) | random.randrange(x, y)) + C) % (y - x + 1) + x
 
 def get_c_last(k=1000, run=False):
     C = _C_RUN if run else _C_LOAD
@@ -48,7 +47,9 @@ def get_c_last(k=1000, run=False):
 
 
 def current_time():
-    return str(datetime.datetime.now())[:19]
+    # return str(datetime.datetime.now())[:19]
+    # change to 1752908861962
+    return str(int(datetime.datetime.now().timestamp() * 1000))
 
 
 def get_c_id():
@@ -91,8 +92,9 @@ def get_ol_quantity(ol_cnt):
     return [random.randrange(1, 11) for i in range(ol_cnt)]
 
 
-def get_w_id():
-    return random.randrange(1, 51)
+# scale: warehouse数量
+def get_w_id(scale: int):
+    return random.randrange(1, scale + 1)
 
 
 def get_d_id():
@@ -142,6 +144,8 @@ def query_cus_by(fetch_id=False):
     else:
         return get_c_id()
 
+def get_level_threshold():
+    return random.randrange(10, 100)
 
 # def query_cus_by():
 #     y = random.randrange(100)

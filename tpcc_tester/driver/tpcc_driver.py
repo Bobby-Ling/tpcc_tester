@@ -27,6 +27,8 @@ CNT_NEW_ORDERS = CNT_W * 10 * 900
 # CNT_ORDER_LINE = CNT_ORDERS * 10
 CNT_ORDER_LINE = 600320
 
+DATA_MAX = 255
+
 """
 wc -l tpcc_csv/*.csv
     60001 tpcc_csv/customer.csv
@@ -79,7 +81,7 @@ tables_info = [
     (STOCK, 'count_stock', CNT_STOCK, 'count_stock')
 ]
 
-W_ID_MAX = 51
+W_ID_MAX = CNT_W + 1
 D_ID_MAX = 11
 
 
