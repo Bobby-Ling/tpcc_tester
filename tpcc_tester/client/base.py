@@ -88,6 +88,8 @@ class DBClient(ABC):
         self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
         if result.state == ServerState.ERROR:
             raise Exception(result.result_str)
+        # 记录sql
+        result.sql = sql
 
         # self.sql_logger.info("-" * 50)
 
@@ -142,7 +144,7 @@ class DBClient(ABC):
 
 
     def insert(self, table, rows):
-        values = ''.join([VALUES, '(', ','.join(['%s' for i in range(len(rows[0]))]), ')'])
+        values = ''.join([VALUES, '(', ','.join(['%s' for i in range(len(rows))]), ')'])
         sql = ' '.join([INSERT, "into", table, values, ';'])
         for i in rows:
             sql = sql.replace("%s", str(i), 1)

@@ -22,6 +22,11 @@ class Result:
     data: List[List[Any]]
     result_str: str
     raw: Any = None
+    sql: Optional[str] = None
+
+    def is_empty(self):
+        return self.state == ServerState.OK and len(self.data) == 0
+
 def run_once(f):
     """Runs a function (successfully) only once.
     The running can be reset by setting the `has_run` attribute to False
