@@ -103,7 +103,12 @@ class TpccDriver:
         self._client = client
         self._recorder = recorder
 
-        self.logger = setup_logging(f"{self.__class__.__name__}")
+        self.logger = setup_logging(f"{__name__}")
+        self.error_logger = setup_logging(
+            f"{self.logger.name}_error",
+            console_level=logging.CRITICAL,
+            file_level=logging.ERROR
+        )
         self._flag = True
         # self._delivery_q = Queue()
         # self._delivery_t = Thread(target=self.process_delivery, args=(self._delivery_q,))

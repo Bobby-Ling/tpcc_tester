@@ -1,13 +1,18 @@
 import os
 import pathlib
 import sqlite3
+import sys
 import threading
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
 project_dir = file_dir.parent
+sys.path.append(str(project_dir.parent))
+
+from tpcc_tester.common import setup_logging
 
 NewOrder = 0
 Payment = 1
@@ -19,11 +24,12 @@ name = {NewOrder: 'New Order', Payment: 'Payment', Delivery: 'Delivery', OrderSt
 
 class Recorder:
     def __init__(self, db_path: str):
-        self.db_path = db_path
+        self.logger = setup_logging(f"{__name__}")
         db_dir = pathlib.Path(self.db_path).parent
         if not os.path.exists(db_dir):
             os.makedirs(db_dir)
         self.conn = sqlite3.connect(self.db_path)
+        self.logger.debug(f"db_path: {self.db_path}")
         self.lock = threading.Lock()
         self.build_db()
 
@@ -39,6 +45,7 @@ class Recorder:
 
     def put_new_order(self, time: float):
         self.lock.acquire()
+        self.logger.info(f"put_new_order: {time}")
         cursor = self.conn.cursor()
         cursor.execute('begin transaction;')
         cursor.execute('select no from new_order_txn order by no desc;')
@@ -49,6 +56,7 @@ class Recorder:
 
     def put_txn(self, txn: int, time: float, success: bool):
         self.lock.acquire()
+        self.logger.info(f"put_txn: txn: {txn}, time: {time}, success: {success}")
         cursor = self.conn.cursor()
         cursor.execute('begin transaction;')
         cursor.execute('select avg, total, success from test_result where txn = ?', (txn,))

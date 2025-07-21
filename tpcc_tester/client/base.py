@@ -53,9 +53,10 @@ class DBClient(ABC):
     def __init__(self, db: str, port: int):
         self.db = db
         self.port = port
-        self.logger = setup_logging(self.__class__.__name__)
+        self.logger = setup_logging(__name__)
+        #
         self.sql_logger = setup_logging(
-            self.logger.name + '.Sql',
+            self.logger.name + '_sql',
             console_level=logging.ERROR,
             file_level=logging.DEBUG,
             console_formatter='%(message)s',

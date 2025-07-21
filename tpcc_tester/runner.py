@@ -26,7 +26,7 @@ class TestRunner:
         # Recorder是全局唯一的
         self.recorder = recorder
         self.client_type = client_type
-        self.logger = setup_logging(f"{self.__class__.__name__}")
+        self.logger = setup_logging(f"{__name__}")
 
     def clean(self, drop_db: bool = False):
         shutil.rmtree(f'{project_dir}/result')
@@ -55,7 +55,7 @@ class TestRunner:
         driver.delay_close()
 
     def test(self, tid, txns=150, txn_prob=None):
-        self.logger.info(f'+ Test_{tid} Begin')
+        self.logger.info(f'+ Test_{tid} Begin(txns: {txns}, txn_prob: {txn_prob})')
         # Driver每个线程一个
         driver = TpccDriver.from_type(self.client_type, scale=CNT_W, recorder=self.recorder)
         driver.run_test(txns, txn_prob)
