@@ -1,9 +1,10 @@
+from contextlib import contextmanager
 import logging
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, final
 
-from tpcc_tester.common import ServerState, Result, setup_logging
+from tpcc_tester.common import ServerState, Result, setup_logging, TransactionAbort, ResultEmpty
 
 # Operator
 ALL = '*'
@@ -83,6 +84,15 @@ class DBClient(ABC):
             return result
         return wrapper
 
+    @staticmethod
+    def result_handler(func: Callable[..., Result]):
+        # 目前未使用
+        def wrapper(self: 'DBClient', *args, **kwargs):
+            result = func(self, *args, **kwargs)
+            result.empty_or_throw()
+            return result
+        return wrapper
+
     def append_record(self, sql: str, result: Result) -> None:
         self.sql_logger.info(f"{sql}")
         self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
@@ -110,15 +120,19 @@ class DBClient(ABC):
     def send_tcl(self, sql: str) -> Result:
         return self.send_cmd(sql)
 
+    @final
     def begin(self) -> Result:
         return self.send_tcl("BEGIN;")
 
+    @final
     def commit(self) -> Result:
         return self.send_tcl("COMMIT;")
 
+    @final
     def abort(self) -> Result:
         return self.send_tcl("ABORT;")
 
+    @final
     def select(self, table, col=ALL, where=False, order_by=False, asc=False):
         if type(table) != list:
             table = [table]
@@ -143,6 +157,7 @@ class DBClient(ABC):
         return self.send_dql(sql)
 
 
+    @final
     def insert(self, table, rows):
         values = ''.join([VALUES, '(', ','.join(['%s' for i in range(len(rows))]), ')'])
         sql = ' '.join([INSERT, "into", table, values, ';'])
@@ -151,6 +166,7 @@ class DBClient(ABC):
         return self.send_dml(sql)
 
 
+    @final
     def update(self, table, row, where=False):
         if type(row) != list:
             row = [row]
@@ -169,6 +185,7 @@ class DBClient(ABC):
             sql = sql.replace("%s", str(i), 1)
         return self.send_dml(sql)
 
+    @final
     def delete(self, table, where):
         if type(where) != list:
             where = [where]

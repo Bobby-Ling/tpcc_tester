@@ -313,9 +313,6 @@ class TpccDriver:
         """
         count_result = 0
         res = self._client.select(table=table, col=(COUNT(alias=count_as),))
-        if res.is_empty():
-            self.logger.warning(f'error, {count_type}: {count_result}, expecting: {expected_count}')
-            return
         count_result = int(res.data[0][0])
         if count_result != expected_count:
             self.logger.info(f'failed, {count_type}: {count_result}, expecting: {expected_count}')
@@ -325,6 +322,20 @@ class TpccDriver:
         # 遍历每个表的信息并进行检查
         for table, count_as, expected_count, count_type in tables_info:
             self.count_and_check(table, count_as, expected_count, count_type)
+
+    @staticmethod
+    def transaction_error_handling(func: Callable[..., ServerState]):
+        def wrapper(self: 'TpccDriver', *args, **kwargs):
+            try:
+                res = func(self, *args, **kwargs)
+                return res
+            except ResultEmpty as e:
+                self.logger.warning(f"Result is empty; error: {e}")
+                return ServerState.OK
+            except TransactionAbort as e:
+                self.logger.warning(f"Transaction aborted; error: {e}")
+                return ServerState.ABORT
+        return wrapper
 
     def consistency_check(self):
         self.logger.info("consistency checking...")
@@ -339,9 +350,7 @@ class TpccDriver:
                                  table=DISTRICT,
                                  col=(D_NEXT_O_ID,),  # 加逗号，否则会被认为是字符串，而不是元组
                                  where=[(D_W_ID, EQ, w_id),
-                                        (D_ID, EQ, d_id)])
-                    if res.state == ServerState.ABORT:
-                        raise Exception(f"error: {w_id}, {d_id}")
+                                        (D_ID, EQ, d_id)]).empty_or_throw()
 
                     d_next_o_id = int(res.data[0][0])
 
@@ -349,10 +358,7 @@ class TpccDriver:
                                  table=ORDERS,
                                  col=(MAX(O_ID),),
                                  where=[(O_W_ID, EQ, w_id),
-                                        (O_D_ID, EQ, d_id)])
-
-                    if len(res.data[0]) == 0:
-                        raise Exception(f"error: {w_id}, {d_id}")
+                                        (O_D_ID, EQ, d_id)]).empty_or_throw()
 
                     max_o_id = int(res.data[0][0])
 
@@ -360,7 +366,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)])
+                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
 
                     max_no_o_id = int(res.data[0][0])
 
@@ -377,7 +383,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(COUNT(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)])
+                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
 
                     num_no_o_id = int(res.data[0][0])
 
@@ -385,7 +391,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)])
+                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
 
                     max_no_o_id = int(res.data[0][0])
 
@@ -393,7 +399,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MIN(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)])
+                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
 
                     min_no_o_id = int(res.data[0][0])
 
@@ -410,7 +416,7 @@ class TpccDriver:
                                  table=ORDERS,
                                  col=(SUM(O_OL_CNT),),
                                  where=[(O_W_ID, EQ, w_id),
-                                        (O_D_ID, EQ, d_id)])
+                                        (O_D_ID, EQ, d_id)]).empty_or_throw()
 
                     sum_o_ol_cnt = int(res.data[0][0])
 
@@ -418,7 +424,7 @@ class TpccDriver:
                                  table=ORDER_LINE,
                                  col=(COUNT(OL_O_ID),),
                                  where=[(OL_W_ID, EQ, w_id),
-                                        (OL_D_ID, EQ, d_id)])
+                                        (OL_D_ID, EQ, d_id)]).empty_or_throw()
 
                     num_ol_o_id = int(res.data[0][0])
 
@@ -439,7 +445,8 @@ class TpccDriver:
             res = self._client.select(
                          table=ORDERS,
                          col=(COUNT(alias='count_orders'),),
-                         )
+                         ).empty_or_throw()
+
             cnt_orders = int(res.data[0][0])
             if cnt_orders == CNT_ORDERS + cnt_new_orders:
                 self.logger.info("all pass!")
@@ -450,6 +457,7 @@ class TpccDriver:
             self.error_logger.exception(f"Exception occurred; error: {e}, res: {res}")
             self.logger.warning("consistency checking 2 error!")
 
+    @transaction_error_handling
     def do_new_order(self, w_id: int, d_id: int, c_id: int, ol_i_id: list[int], ol_supply_w_id: list[int], ol_quantity: list[int]):
         self.logger.info(f"do_new_order, w_id: {w_id}, d_id: {d_id}, c_id: {c_id}, ol_i_id: {ol_i_id}, ol_supply_w_id: {ol_supply_w_id}, ol_quantity: {ol_quantity}")
         res = []
@@ -460,8 +468,7 @@ class TpccDriver:
         s_data = ''
 
         # transcation
-        if self._client.begin().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.begin()
         # self.logger.info('+ New Order')
         # phase 1
         # 检索仓库（warehouse）税率、区域（district）税率和下一个可用订单号。
@@ -469,39 +476,22 @@ class TpccDriver:
                         table=DISTRICT,
                         col=(D_TAX, D_NEXT_O_ID),
                         where=[(D_ID, EQ, d_id),
-                            (D_W_ID, EQ, w_id)])
-
-        # 每一个都加上判断
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                            (D_W_ID, EQ, w_id)]).empty_or_throw()
 
         d_tax, d_next_o_id = res.data[0]
         d_tax = float(d_tax)
         d_next_o_id = int(d_next_o_id)
 
-        if self._client.update(
+        self._client.update(
                   table=DISTRICT,
                   row=(D_NEXT_O_ID, d_next_o_id + 1),
-                  where=[(D_ID, EQ, d_id), (D_W_ID, EQ, w_id)]).state == ServerState.ABORT:
-            return ServerState.ABORT
+                  where=[(D_ID, EQ, d_id), (D_W_ID, EQ, w_id)]).abort_and_throw()
 
         res = self._client.select(
                         col=(C_DISCOUNT, C_LAST, C_CREDIT, W_TAX),
                         table=[CUSTOMER, WAREHOUSE],
                         where=[(W_ID, EQ, w_id), (C_W_ID, EQ, W_ID), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]
-                        )
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                        ).empty_or_throw()
 
         c_discount, c_last_, c_credit, w_tax = res.data[0]
         c_discount = float(c_discount)
@@ -510,31 +500,23 @@ class TpccDriver:
         # phase 2
         # 插入订单（order）、新订单（new-order）和新订单行（order-line）。
         order_time = "'" + current_time() + "'"
-        if self._client.insert(
+        self._client.insert(
                   table=ORDERS,
                   rows=(d_next_o_id, d_id, w_id, c_id, order_time, 0, ol_cnt,
-                        int(len(set(ol_supply_w_id)) == 1))).state == ServerState.ABORT:
-            return ServerState.ABORT
+                        int(len(set(ol_supply_w_id)) == 1))).abort_and_throw()
 
-        if self._client.insert(
+        self._client.insert(
                   table=NEW_ORDERS,
-                  rows=(d_next_o_id, d_id, w_id)).state == ServerState.ABORT:
-            return ServerState.ABORT
+                  rows=(d_next_o_id, d_id, w_id)).abort_and_throw()
 
         # phase 3
         for i in range(ol_cnt):
             res = self._client.select(
                             table=ITEM,
                             col=(I_PRICE, I_NAME, I_DATA),
-                            where=(I_ID, EQ, ol_i_id[i]))
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
+                            where=(I_ID, EQ, ol_i_id[i])).empty_or_throw()
             i_price, i_name, i_data = res.data[0]
             i_price = float(i_price)
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
 
             res = self._client.select(
                             table=STOCK,
@@ -543,14 +525,7 @@ class TpccDriver:
                                 S_DIST_07,
                                 S_DIST_08, S_DIST_09, S_DIST_10, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DATA),
                             where=[(S_I_ID, EQ, ol_i_id[i]),
-                                (S_W_ID, EQ, ol_supply_w_id[i])])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                (S_W_ID, EQ, ol_supply_w_id[i])]).empty_or_throw()
 
             s_quantity, *s_dist, s_ytd, s_order_cnt, s_remote_cnt, s_data = res.data[0]
             s_quantity = float(s_quantity)
@@ -569,33 +544,31 @@ class TpccDriver:
             if ol_supply_w_id[i] != w_id:
                 s_remote_cnt += 1
 
-            if self._client.update(
+            self._client.update(
                       table=STOCK,
                       row=[(S_QUANTITY, s_quantity),
                            (S_YTD, s_ytd),
                            (S_ORDER_CNT, s_order_cnt),
                            (S_REMOTE_CNT, s_remote_cnt)],
                       where=[(S_I_ID, EQ, ol_i_id[i]),
-                             (S_W_ID, EQ, ol_supply_w_id[i])]).state == ServerState.ABORT:
-                return ServerState.ABORT
+                             (S_W_ID, EQ, ol_supply_w_id[i])]).abort_and_throw()
             ol_amount = ol_quantity[i] * i_price
             brand_generic = 'B' if re.search('ORIGINAL', i_data) and re.search('ORIGINAL', s_data) else 'G'
 
-            if self._client.insert(
+            self._client.insert(
                         table=ORDER_LINE,
                         rows=(d_next_o_id, d_id, w_id, i, ol_i_id[i], ol_supply_w_id[i], order_time, ol_quantity[i],
-                            ol_amount, "'" + s_dist[d_id - 1] + "'")).state == ServerState.ABORT:
-                return ServerState.ABORT
+                            ol_amount, "'" + s_dist[d_id - 1] + "'")).abort_and_throw()
 
             total_amount += ol_amount
 
         total_amount *= (1 - c_discount) * (1 + w_tax + d_tax)
 
-        if self._client.commit().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.commit()
         # self.logger.info('- New Order')
         return ServerState.OK
 
+    @transaction_error_handling
     def do_payment(self, w_id: int, d_id: int, c_w_id: int, c_d_id: int, c_query: int | str, h_amount: float):
         self.logger.info(f"do_payment, w_id: {w_id}, d_id: {d_id}, c_w_id: {c_w_id}, c_d_id: {c_d_id}, c_query: {c_query}, h_amount: {h_amount}")
         c_balance = 0
@@ -603,47 +576,32 @@ class TpccDriver:
         c_payment_cnt = 0
         c_credit = 'GC'
         c_id = 0
-        if self._client.begin().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.begin()
         # self.logger.info('+ Payment')
         res = self._client.select(
                         table=WAREHOUSE,
                         col=(W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_YTD),
-                        where=(W_ID, EQ, w_id))
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                        where=(W_ID, EQ, w_id)).empty_or_throw()
+
         w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_ytd = res.data[0]
         # w_ytd = eval(w_ytd)
-        if self._client.update(
+        self._client.update(
                   table=WAREHOUSE,
                   row=(W_YTD, W_YTD + '+' + str(h_amount)),
-                  where=(W_ID, EQ, w_id)).state == ServerState.ABORT:
-            return ServerState.ABORT
+                  where=(W_ID, EQ, w_id)).abort_and_throw()
 
         res = self._client.select(
                         table=DISTRICT,
                         col=(D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_YTD),
-                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)])
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
 
         d_name, d_street_1, d_street_2, d_city, d_state, d_zip, d_ytd = res.data[0]
 
         # d_ytd = eval(d_ytd)
-        if self._client.update(
+        self._client.update(
                   table=DISTRICT,
                   row=(D_YTD, D_YTD + '+' + str(h_amount)),
-                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).state == ServerState.ABORT:
-            return ServerState.ABORT
+                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
 
         if type(c_query) == str:
             c_query = "'" + c_query + "'"
@@ -658,13 +616,7 @@ class TpccDriver:
                                     (C_D_ID, EQ, c_d_id)],
                             # order_by=C_FIRST,
                             # asc=True
-                            )
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            ).empty_or_throw()
             res = res.data[0]
 
         else:
@@ -675,13 +627,7 @@ class TpccDriver:
                                     C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
                             where=[(C_ID, EQ, c_query),
                                     (C_W_ID, EQ, c_w_id),
-                                    (C_D_ID, EQ, c_d_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                    (C_D_ID, EQ, c_d_id)]).empty_or_throw()
             res = res.data[0]
             c_id, c_first, c_midele, c_last, \
                 c_street_1, c_street_2, c_city, c_state, \
@@ -691,50 +637,42 @@ class TpccDriver:
             c_balance = float(c_balance)
             c_ytd_payment = float(c_ytd_payment)
             c_payment_cnt = int(c_payment_cnt)
-        if self._client.update(
+        self._client.update(
                   table=CUSTOMER,
                   row=[(C_BALANCE, c_balance + h_amount),
                        (C_YTD_PAYMENT, c_ytd_payment + 1),
                        (C_PAYMENT_CNT, c_payment_cnt + 1)],
-                  where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).state == ServerState.ABORT:
-            return ServerState.ABORT
+                  where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).abort_and_throw()
         if c_credit == 'BC':
             res = self._client.select(
                                 table=CUSTOMER,
                                 col=(C_DATA,),
                                 where=[(C_ID, EQ, c_id),
                                         (C_W_ID, EQ, c_w_id),
-                                        (C_D_ID, EQ, c_d_id)])
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                        (C_D_ID, EQ, c_d_id)]).empty_or_throw()
             c_data = (''.join(map(str, [c_id, c_d_id, c_w_id, d_id, h_amount]))
                         + res.data[0][0])[0:DATA_MAX]
-            if self._client.update(
+            self._client.update(
                       table=CUSTOMER,
                       row=(C_DATA, "'" + c_data + "'"),
-                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).state == ServerState.ABORT:
-                return ServerState.ABORT
+                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).abort_and_throw()
 
         # 4 blank space
         h_data = w_name + '    ' + d_name
-        if self._client.insert(
+        self._client.insert(
                   table=HISTORY,
                   rows=(c_id, c_d_id, c_w_id, d_id, w_id, "'" + current_time() + "'", h_amount,
-                        "'" + h_data + "'")).state == ServerState.ABORT:
-            return ServerState.ABORT
+                        "'" + h_data + "'")).abort_and_throw()
 
-        if self._client.commit().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.commit()
         # self.logger.info('- Payment')
         return ServerState.OK
 
+    @transaction_error_handling
     def do_order_status(self, w_id: int, d_id: int, c_query: int | str) -> ServerState:
         self.logger.info(f"do_order_status, w_id: {w_id}, d_id: {d_id}, c_query: {c_query}")
         c_id = 0 # 不会查出任何结果
-        if self._client.begin().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.begin()
         # self.logger.info('+ Order Status')
         # 60% 执⾏
         if type(c_query) == str:
@@ -750,20 +688,12 @@ class TpccDriver:
                             col=(COUNT(C_ID, "count_c_id"),),
                             where=[(C_LAST, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
-                                    (C_D_ID, EQ, d_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                    (C_D_ID, EQ, d_id)]).empty_or_throw()
 
             customer_count = int(res.data[0][0])
             if customer_count == 0:
                 # 没有找到客户, 正常结束事务
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
+                self._client.commit()
                 return ServerState.OK
 
             # 查询客户信息, 按 c_first 排序
@@ -774,14 +704,7 @@ class TpccDriver:
                                     (C_W_ID, EQ, w_id),
                                     (C_D_ID, EQ, d_id)],
                             order_by=C_FIRST,
-                            asc=True)
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            asc=True).empty_or_throw()
 
             # 根据 TPC-C 规范, 选择中间的客户
             middle_index = customer_count // 2
@@ -794,15 +717,7 @@ class TpccDriver:
                             col=(C_ID, C_BALANCE, C_FIRST, C_MIDDLE, C_LAST),
                             where=[(C_ID, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
-                                    (C_D_ID, EQ, d_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-
-            if res.is_empty():
-                # 没有找到客户，正常结束事务
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                    (C_D_ID, EQ, d_id)]).empty_or_throw()
 
             c_id, c_balance, c_first, c_middle, c_last = res.data[0]
             c_id = int(c_id)
@@ -816,20 +731,11 @@ class TpccDriver:
                             (O_C_ID, EQ, c_id)],
                         order_by=O_ID,
                         asc=False  # 降序，获取最新的订单
-                        )
-
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                        ).empty_or_throw()
 
         if len(res.data) == 0:
             # 该客户没有订单，正常结束事务
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
+            self._client.commit()
             return ServerState.OK
 
         o_id, o_entry_id, o_carrier_id = res.data[0]
@@ -841,27 +747,19 @@ class TpccDriver:
                         col=(OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D),
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
-                            (OL_O_ID, EQ, o_id)])
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                            (OL_O_ID, EQ, o_id)]).empty_or_throw()
 
         order_lines = res.data  # 获取所有订单行
 
-        if self._client.commit().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.commit()
         # self.logger.info('- Order Status')
         return ServerState.OK
 
+    @transaction_error_handling
     def do_delivery(self, w_id: int, o_carrier_id: int) -> ServerState:
         self.logger.info(f"do_delivery, w_id: {w_id}, o_carrier_id: {o_carrier_id}")
         t1 = time.time()
-        if self._client.begin().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.begin()
         # self.logger.info('+ Delivery')
         # dat = q.get()
         # w_id = dat['w_id']
@@ -873,47 +771,28 @@ class TpccDriver:
                             where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id)],
                             # order_by=NO_O_ID,
                             # asc=True
-                            )
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            ).empty_or_throw()
+
             o_id = int(res.data[0][0])
-            if self._client.delete(
+            self._client.delete(
                       table=NEW_ORDERS,
-                      where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id), (NO_O_ID, EQ, o_id)]).state == ServerState.ABORT:
-                return ServerState.ABORT
+                      where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id), (NO_O_ID, EQ, o_id)]).abort_and_throw()
 
             res = self._client.select(
                             table=ORDERS,
                             col=(O_C_ID,),
-                            where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).empty_or_throw()
             o_c_id = res.data[0][0]
             o_c_id = int(o_c_id)
 
-            if self._client.update(
+            self._client.update(
                       table=ORDERS,
                       row=(O_CARRIER_ID, o_carrier_id),
-                      where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).state == ServerState.ABORT:
-                return ServerState.ABORT
+                      where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).abort_and_throw()
 
             res = self._client.select(
                             table=ORDER_LINE,
-                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
             order_lines = res
             if not order_lines:
                 order_lines = []
@@ -923,13 +802,7 @@ class TpccDriver:
             res = self._client.select(
                             table=ORDER_LINE,
                             col=(SUM(OL_AMOUNT),),
-                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
             ol_amount = res.data[0][0]
             if not ol_amount:
                 ol_amount = 0
@@ -940,35 +813,26 @@ class TpccDriver:
             for line in order_lines:
                 if line[0] == '':
                     continue
-                if self._client.update(
+                self._client.update(
                           table=ORDER_LINE,
                           row=(OL_DELIVERY_D, "'" + current_time() + "'"),
                           where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id),
-                                 (OL_O_ID, EQ, eval(line[0]))]).state == ServerState.ABORT:
-                    return ServerState.ABORT
+                                 (OL_O_ID, EQ, eval(line[0]))]).abort_and_throw()
 
             res = self._client.select(
                             table=CUSTOMER,
                             col=(C_BALANCE, C_DELIVERY_CNT),
-                            where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                            where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).empty_or_throw()
             c_balance, c_delivery_cnt = res.data[0]
             c_balance = float(c_balance)
             c_delivery_cnt = int(c_delivery_cnt)
 
             # self.logger.info(c_balance, ol_amount, c_delivery_cnt)
-            if self._client.update(
+            self._client.update(
                       table=CUSTOMER,
                       row=[(C_BALANCE, c_balance + ol_amount), (C_DELIVERY_CNT, c_delivery_cnt + 1)],
-                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).state == ServerState.ABORT:
-                return ServerState.ABORT
-        if self._client.commit().state == ServerState.ABORT:
-            return ServerState.ABORT
+                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).abort_and_throw()
+        self._client.commit()
         t2 = time.time()
         # put_txn(lock,Delivery,t2-t1,True)
         # self.logger.info('- Delivery')
@@ -976,22 +840,15 @@ class TpccDriver:
         self._delivery_stop = True
         return ServerState.OK
 
+    @transaction_error_handling
     def do_stock_level(self, w_id: int, d_id: int, level: int) -> ServerState:
         self.logger.info(f"do_stock_level, w_id: {w_id}, d_id: {d_id}, level: {level}")
-        if self._client.begin().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.begin()
         # self.logger.info('+ Stock Level')
         res = self._client.select(
                         table=DISTRICT,
                         col=(D_NEXT_O_ID,),
-                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)])
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
 
         d_next_o_id = int(res.data[0][0])
 
@@ -1001,14 +858,7 @@ class TpccDriver:
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
                             (OL_O_ID, LT, d_next_o_id - 20),
-                            (OL_O_ID, LT, d_next_o_id)])
-        if res.state == ServerState.ABORT:
-            return ServerState.ABORT
-
-        if res.is_empty():
-            if self._client.commit().state == ServerState.ABORT:
-                return ServerState.ABORT
-            return ServerState.OK
+                            (OL_O_ID, LT, d_next_o_id)]).empty_or_throw()
 
         order_lines = res.data
         # self.logger.info(order_lines)
@@ -1022,14 +872,7 @@ class TpccDriver:
                             col=(S_QUANTITY,),
                             where=[(S_I_ID, EQ, item),
                                 (S_W_ID, EQ, w_id),
-                                (S_QUANTITY, LT, level)])
-            if res.state == ServerState.ABORT:
-                return ServerState.ABORT
-
-            if res.is_empty():
-                if self._client.commit().state == ServerState.ABORT:
-                    return ServerState.ABORT
-                return ServerState.OK
+                                (S_QUANTITY, LT, level)]).empty_or_throw()
 
             cur_quantity = int(res.data[0][0])
             # low_stock += eval(cur_quantity)
@@ -1037,7 +880,6 @@ class TpccDriver:
         #                     table=STOCK,
         #                     col=S_QUANTITY,
         #                     where=[(S_W_ID,eq,w_id),(S_I_ID,eq,ol_i_id),(S_QUANTITY,lt,level)])
-        if self._client.commit().state == ServerState.ABORT:
-            return ServerState.ABORT
+        self._client.commit()
         # self.logger.info('- Stock Level')
         return ServerState.OK

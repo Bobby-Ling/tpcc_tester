@@ -3,7 +3,7 @@ import logging
 import colorlog
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Any, Optional
+from typing import Callable, List, Any, Optional
 from pathlib import Path
 
 class ServerState(Enum):
@@ -12,6 +12,13 @@ class ServerState(Enum):
     ABORT = "ABORT"
     ERROR = "ERROR"
 
+class TransactionAbort(Exception):
+    def __init__(self, message: str):
+        super().__init__("Transaction aborted; result: " + message)
+
+class ResultEmpty(Exception):
+    def __init__(self, message: str):
+        super().__init__("Result is empty; result: " + message)
 
 @dataclass
 class Result:
@@ -26,6 +33,20 @@ class Result:
 
     def is_empty(self):
         return self.state == ServerState.OK and len(self.data) == 0
+
+    def throw_if(self, condition: Callable[[], bool], exception: Exception):
+        if condition():
+            raise exception(str(self))
+        return self
+
+    def empty_or_throw(self):
+        self.abort_and_throw()
+        self.throw_if(lambda: self.is_empty(), ResultEmpty)
+        return self
+
+    def abort_and_throw(self):
+        self.throw_if(lambda: self.state == ServerState.ABORT, TransactionAbort)
+        return self
 
 def run_once(f):
     """Runs a function (successfully) only once.
