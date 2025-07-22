@@ -793,31 +793,20 @@ class TpccDriver:
             res = self._client.select(
                             table=ORDER_LINE,
                             where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
-            order_lines = res
-            if not order_lines:
-                order_lines = []
-            else:
-                order_lines = [i.strip('|').split('|').strip('- ') for i in order_lines[1:]]
+            order_lines = res.data
 
             res = self._client.select(
                             table=ORDER_LINE,
                             col=(SUM(OL_AMOUNT),),
                             where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
-            ol_amount = res.data[0][0]
-            if not ol_amount:
-                ol_amount = 0
-            else:
-                ol_amount = [float(o[0]) for o in ol_amount]
-                ol_amount = sum(ol_amount)
+            ol_amount = float(res.data[0][0])
 
             for line in order_lines:
-                if line[0] == '':
-                    continue
                 self._client.update(
                           table=ORDER_LINE,
                           row=(OL_DELIVERY_D, "'" + current_time() + "'"),
                           where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id),
-                                 (OL_O_ID, EQ, eval(line[0]))]).abort_and_throw()
+                                 (OL_O_ID, EQ, int(line[0]))]).abort_and_throw()
 
             res = self._client.select(
                             table=CUSTOMER,
