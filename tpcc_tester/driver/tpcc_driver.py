@@ -324,17 +324,20 @@ class TpccDriver:
             self.count_and_check(table, count_as, expected_count, count_type)
 
     @staticmethod
-    def transaction_error_handling(func: Callable[..., ServerState]):
+    def transaction_handling(func: Callable[..., ServerState]):
         def wrapper(self: 'TpccDriver', *args, **kwargs):
+            self.logger.info(f">>>")
             try:
                 res = func(self, *args, **kwargs)
                 return res
             except ResultEmpty as e:
                 self.logger.warning(f"Result is empty; error: {e}")
-                return ServerState.OK
+                res = ServerState.OK
             except TransactionAbort as e:
                 self.logger.warning(f"Transaction aborted; error: {e}")
-                return ServerState.ABORT
+                res = ServerState.ABORT
+            self.logger.info(f"<<<")
+            return res
         return wrapper
 
     def consistency_check(self):
@@ -457,7 +460,7 @@ class TpccDriver:
             self.error_logger.exception(f"Exception occurred; error: {e}, res: {res}")
             self.logger.warning("consistency checking 2 error!")
 
-    @transaction_error_handling
+    @transaction_handling
     def do_new_order(self, w_id: int, d_id: int, c_id: int, ol_i_id: list[int], ol_supply_w_id: list[int], ol_quantity: list[int]):
         self.logger.info(f"do_new_order, w_id: {w_id}, d_id: {d_id}, c_id: {c_id}, ol_i_id: {ol_i_id}, ol_supply_w_id: {ol_supply_w_id}, ol_quantity: {ol_quantity}")
         res = []
@@ -568,7 +571,7 @@ class TpccDriver:
         # self.logger.info('- New Order')
         return ServerState.OK
 
-    @transaction_error_handling
+    @transaction_handling
     def do_payment(self, w_id: int, d_id: int, c_w_id: int, c_d_id: int, c_query: int | str, h_amount: float):
         self.logger.info(f"do_payment, w_id: {w_id}, d_id: {d_id}, c_w_id: {c_w_id}, c_d_id: {c_d_id}, c_query: {c_query}, h_amount: {h_amount}")
         c_balance = 0
@@ -601,7 +604,7 @@ class TpccDriver:
         self._client.update(
                   table=DISTRICT,
                   row=(D_YTD, D_YTD + '+' + str(h_amount)),
-                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
+                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).abort_and_throw()
 
         if type(c_query) == str:
             c_query = "'" + c_query + "'"
@@ -668,7 +671,7 @@ class TpccDriver:
         # self.logger.info('- Payment')
         return ServerState.OK
 
-    @transaction_error_handling
+    @transaction_handling
     def do_order_status(self, w_id: int, d_id: int, c_query: int | str) -> ServerState:
         self.logger.info(f"do_order_status, w_id: {w_id}, d_id: {d_id}, c_query: {c_query}")
         c_id = 0 # 不会查出任何结果
@@ -755,7 +758,7 @@ class TpccDriver:
         # self.logger.info('- Order Status')
         return ServerState.OK
 
-    @transaction_error_handling
+    @transaction_handling
     def do_delivery(self, w_id: int, o_carrier_id: int) -> ServerState:
         self.logger.info(f"do_delivery, w_id: {w_id}, o_carrier_id: {o_carrier_id}")
         t1 = time.time()
@@ -829,7 +832,7 @@ class TpccDriver:
         self._delivery_stop = True
         return ServerState.OK
 
-    @transaction_error_handling
+    @transaction_handling
     def do_stock_level(self, w_id: int, d_id: int, level: int) -> ServerState:
         self.logger.info(f"do_stock_level, w_id: {w_id}, d_id: {d_id}, level: {level}")
         self._client.begin()
