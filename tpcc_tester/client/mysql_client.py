@@ -17,12 +17,18 @@ class MySQLClient(DBClient):
     @override
     def connect(self) -> ServerState:
         try:
+            # https://stackoverflow.com/questions/59871904/convert-pymysql-query-result-with-mysql-decimal-type-to-python-float
+            conversions = pymysql.converters.conversions
+            conversions[pymysql.FIELD_TYPE.NEWDECIMAL] = lambda x: float(x)
+            conversions[pymysql.FIELD_TYPE.DECIMAL] = lambda x: float(x)
+            conversions[pymysql.FIELD_TYPE.FLOAT] = lambda x: float(x)
             self.connection = pymysql.connect(
                 host=self.host,
                 user=self.user,
                 password=self.password,
                 port=self.port,
                 charset='utf8mb4',
+                conv=conversions,
                 autocommit=True,
                 local_infile=True, # for load data local infile
             )
@@ -59,6 +65,8 @@ class MySQLClient(DBClient):
                 for i, cell in enumerate(row):
                     if type(cell) == int:
                         row[i] = str(cell)
+                    if type(cell) == float:
+                        row[i] = f"{cell:.2f}"
 
             result_str = self._format_result(raw_data)
             result = Result(ServerState.OK, meta_data, data, result_str, raw_data, sql)

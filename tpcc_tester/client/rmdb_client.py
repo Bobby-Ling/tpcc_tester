@@ -119,6 +119,14 @@ class RMDBClient(DBClient):
                 if row_data and any(cell for cell in row_data):  # 非空行
                     data_rows.append(row_data)
 
+        for row in data_rows:
+            for i, cell in enumerate(row):
+                if '.' in cell:
+                    try:
+                        row[i] = f"{float(cell):.2f}"
+                    except:
+                        pass
+
         return data_rows
 
     @override
