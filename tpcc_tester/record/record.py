@@ -10,6 +10,7 @@ from pathlib import Path
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
 project_dir = file_dir.parent
+base_dir = '.'
 sys.path.append(str(project_dir.parent))
 
 from tpcc_tester.common import setup_logging
@@ -29,7 +30,7 @@ class Recorder:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.unlink(missing_ok=True)
         self.conn = sqlite3.connect(self.db_path)
-        self.logger.debug(f"db_path: {self.db_path}")
+        self.logger.debug(f"db_path: {self.db_path.absolute()}")
         self.lock = threading.Lock()
         self.build_db()
 
@@ -44,7 +45,7 @@ class Recorder:
         self.conn.commit()
 
     def drop_db(self):
-        self.logger.debug(f"drop_db: {self.db_path}")
+        self.logger.debug(f"drop_db: {self.db_path.absolute()}")
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
 
@@ -116,12 +117,12 @@ class Recorder:
         print(f"Total Rollback Rate: {total_rollback_rate:.2f}%")
 
         # 写入 statistics_of_five_transactions.txt
-        with open(f'{project_dir}/result/statistics_of_five_transactions.txt', 'w') as f:
+        with open(f'{base_dir}/result/statistics_of_five_transactions.txt', 'w') as f:
             f.writelines(statistics_lines)
 
         # 处理 new order 结果，写入 timecost_and_num_of_NewOrders.txt
         new_order_lines = [f"number: {n[0]}, time cost: {n[1]}\n" for n in new_order_result]
-        with open(f'{project_dir}/result/timecost_and_num_of_NewOrders.txt', 'w') as f2:
+        with open(f'{base_dir}/result/timecost_and_num_of_NewOrders.txt', 'w') as f2:
             f2.writelines(new_order_lines)
 
         # 画图并保存图像
@@ -131,7 +132,7 @@ class Recorder:
         plt.plot(times, numbers)
         plt.ylabel('Number of New-Orders')
         plt.xlabel('Time unit: second')
-        plt.savefig(f'{project_dir}/result/timecost_and_num_of_NewOrders.jpg')
+        plt.savefig(f'{base_dir}/result/timecost_and_num_of_NewOrders.jpg')
         # plt.show()
 
         # 删除数据库文件
@@ -140,7 +141,7 @@ class Recorder:
         # 返回 new order 成功数量
         return result[0]['success']
 
-_recorder = Recorder(f'{project_dir}/result/rds.db')
+_recorder = Recorder(f'{base_dir}/result/rds.db')
 
 def get_recorder_instance():
     return _recorder

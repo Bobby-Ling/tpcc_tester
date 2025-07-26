@@ -11,6 +11,7 @@ import sys
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
 project_dir = file_dir
+base_dir = '.'
 sys.path.append(str(project_dir.parent))
 
 from tpcc_tester.client import *
