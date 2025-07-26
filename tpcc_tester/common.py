@@ -12,13 +12,18 @@ class ServerState(Enum):
     ABORT = "ABORT"
     ERROR = "ERROR"
 
-class TransactionAbort(Exception):
-    def __init__(self, message: str):
-        super().__init__("Transaction aborted; result: " + message)
+class ResultError(Exception):
+    def __init__(self, result: 'Result', message: str):
+        super().__init__(message + "; result: " + str(result))
+        self.result = result
 
-class ResultEmpty(Exception):
-    def __init__(self, message: str):
-        super().__init__("Result is empty; result: " + message)
+class TransactionError(ResultError):
+    def __init__(self, result: 'Result'):
+        super().__init__(result, "Transaction error")
+
+class ResultEmpty(ResultError):
+    def __init__(self, result: 'Result'):
+        super().__init__(result, "Result is empty")
 
 @dataclass
 class Result:
@@ -31,21 +36,29 @@ class Result:
     raw: Any = None
     sql: Optional[str] = None
 
+    def is_valid_dql(self):
+        return self.state == ServerState.OK and self.metadata is not None and len(self.metadata) > 0
+
     def is_empty(self):
         return self.state == ServerState.OK and len(self.data) == 0
 
     def throw_if(self, condition: Callable[[], bool], exception: Exception):
         if condition():
-            raise exception(str(self))
+            raise exception
         return self
 
-    def empty_or_throw(self):
-        self.abort_and_throw()
-        self.throw_if(lambda: self.is_empty(), ResultEmpty)
+    def is_valid_dql_or_throw(self):
+        self.throw_if(lambda: not self.is_valid_dql(), ResultError(self, "Result is invalid DQL"))
         return self
 
-    def abort_and_throw(self):
-        self.throw_if(lambda: self.state == ServerState.ABORT, TransactionAbort)
+    def is_not_empty_or_throw(self):
+        self.ok_or_throw()
+        self.is_valid_dql_or_throw()
+        self.throw_if(lambda: self.is_empty(), ResultEmpty(self))
+        return self
+
+    def ok_or_throw(self):
+        self.throw_if(lambda: self.state != ServerState.OK, TransactionError(self))
         return self
 
 def run_once(f):

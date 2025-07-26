@@ -61,12 +61,12 @@ class MySQLClient(DBClient):
                         row[i] = str(cell)
 
             result_str = self._format_result(raw_data)
-            result = Result(ServerState.OK, meta_data, data, result_str, raw_data)
-            self.logger.debug("exec sql: %s, result: %s", sql, result)
+            result = Result(ServerState.OK, meta_data, data, result_str, raw_data, sql)
+            # self.logger.debug("exec sql: %s, result: %s", sql, result)
             return result
         except Exception as e:
             self.logger.exception(f"Error executing SQL: {sql} error: {e}")
-            return Result(ServerState.ERROR, [], [], str(e), e)
+            return Result(ServerState.ERROR, [], [], str(e), e, sql)
 
     def _format_result(self, result_data) -> str:
         if not result_data:

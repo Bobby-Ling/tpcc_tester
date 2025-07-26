@@ -228,6 +228,7 @@ class TpccDriver:
         self.logger.info("Build table schema...")
         self.send_file(f"{project_dir}/db/create_tables.sql")
 
+    @RMDBClient.ignore_exception
     def drop(self):
         self.logger.warning("Drop table schema...")
         self.send_file(f"{project_dir}/db/drop_table.sql")
@@ -281,9 +282,13 @@ class TpccDriver:
             except ResultEmpty as e:
                 self.logger.warning(f"Result is empty; error: {e}")
                 res = ServerState.OK
-            except TransactionAbort as e:
+            except TransactionError as e:
                 self.logger.warning(f"Transaction aborted; error: {e}")
                 res = ServerState.ABORT
+            except Exception as e:
+                self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
+                exit(-1)
+                raise
             self.logger.info(f"<<<")
             return res
         return wrapper
@@ -301,7 +306,7 @@ class TpccDriver:
                                  table=DISTRICT,
                                  col=(D_NEXT_O_ID,),  # 加逗号，否则会被认为是字符串，而不是元组
                                  where=[(D_W_ID, EQ, w_id),
-                                        (D_ID, EQ, d_id)]).empty_or_throw()
+                                        (D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     d_next_o_id = int(res.data[0][0])
 
@@ -309,7 +314,7 @@ class TpccDriver:
                                  table=ORDERS,
                                  col=(MAX(O_ID),),
                                  where=[(O_W_ID, EQ, w_id),
-                                        (O_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     max_o_id = int(res.data[0][0])
 
@@ -317,7 +322,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     max_no_o_id = int(res.data[0][0])
 
@@ -334,7 +339,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(COUNT(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     num_no_o_id = int(res.data[0][0])
 
@@ -342,7 +347,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     max_no_o_id = int(res.data[0][0])
 
@@ -350,7 +355,7 @@ class TpccDriver:
                                  table=NEW_ORDERS,
                                  col=(MIN(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
-                                        (NO_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
                     min_no_o_id = int(res.data[0][0])
 
@@ -367,17 +372,17 @@ class TpccDriver:
                                  table=ORDERS,
                                  col=(SUM(O_OL_CNT),),
                                  where=[(O_W_ID, EQ, w_id),
-                                        (O_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
-                    sum_o_ol_cnt = int(res.data[0][0])
+                    sum_o_ol_cnt = int(float(res.data[0][0]))
 
                     res = self._client.select(
                                  table=ORDER_LINE,
                                  col=(COUNT(OL_O_ID),),
                                  where=[(OL_W_ID, EQ, w_id),
-                                        (OL_D_ID, EQ, d_id)]).empty_or_throw()
+                                        (OL_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
-                    num_ol_o_id = int(res.data[0][0])
+                    num_ol_o_id = int(float(res.data[0][0]))
 
                     if sum_o_ol_cnt != num_ol_o_id:
                         self.logger.info(
@@ -396,7 +401,7 @@ class TpccDriver:
             res = self._client.select(
                          table=ORDERS,
                          col=(COUNT(alias='count_orders'),),
-                         ).empty_or_throw()
+                         ).is_not_empty_or_throw()
 
             cnt_orders = int(res.data[0][0])
             if cnt_orders == CNT_ORDERS + cnt_new_orders:
@@ -427,7 +432,7 @@ class TpccDriver:
                         table=DISTRICT,
                         col=(D_TAX, D_NEXT_O_ID),
                         where=[(D_ID, EQ, d_id),
-                            (D_W_ID, EQ, w_id)]).empty_or_throw()
+                            (D_W_ID, EQ, w_id)]).is_not_empty_or_throw()
 
         d_tax, d_next_o_id = res.data[0]
         d_tax = float(d_tax)
@@ -436,13 +441,13 @@ class TpccDriver:
         self._client.update(
                   table=DISTRICT,
                   row=(D_NEXT_O_ID, d_next_o_id + 1),
-                  where=[(D_ID, EQ, d_id), (D_W_ID, EQ, w_id)]).abort_and_throw()
+                  where=[(D_ID, EQ, d_id), (D_W_ID, EQ, w_id)]).ok_or_throw()
 
         res = self._client.select(
                         col=(C_DISCOUNT, C_LAST, C_CREDIT, W_TAX),
                         table=[CUSTOMER, WAREHOUSE],
                         where=[(W_ID, EQ, w_id), (C_W_ID, EQ, W_ID), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]
-                        ).empty_or_throw()
+                        ).is_not_empty_or_throw()
 
         c_discount, c_last_, c_credit, w_tax = res.data[0]
         c_discount = float(c_discount)
@@ -454,18 +459,18 @@ class TpccDriver:
         self._client.insert(
                   table=ORDERS,
                   rows=(d_next_o_id, d_id, w_id, c_id, order_time, 0, ol_cnt,
-                        int(len(set(ol_supply_w_id)) == 1))).abort_and_throw()
+                        int(len(set(ol_supply_w_id)) == 1))).ok_or_throw()
 
         self._client.insert(
                   table=NEW_ORDERS,
-                  rows=(d_next_o_id, d_id, w_id)).abort_and_throw()
+                  rows=(d_next_o_id, d_id, w_id)).ok_or_throw()
 
         # phase 3
         for i in range(ol_cnt):
             res = self._client.select(
                             table=ITEM,
                             col=(I_PRICE, I_NAME, I_DATA),
-                            where=(I_ID, EQ, ol_i_id[i])).empty_or_throw()
+                            where=(I_ID, EQ, ol_i_id[i])).is_not_empty_or_throw()
             i_price, i_name, i_data = res.data[0]
             i_price = float(i_price)
 
@@ -476,7 +481,7 @@ class TpccDriver:
                                 S_DIST_07,
                                 S_DIST_08, S_DIST_09, S_DIST_10, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DATA),
                             where=[(S_I_ID, EQ, ol_i_id[i]),
-                                (S_W_ID, EQ, ol_supply_w_id[i])]).empty_or_throw()
+                                (S_W_ID, EQ, ol_supply_w_id[i])]).is_not_empty_or_throw()
 
             s_quantity, *s_dist, s_ytd, s_order_cnt, s_remote_cnt, s_data = res.data[0]
             s_quantity = float(s_quantity)
@@ -502,14 +507,14 @@ class TpccDriver:
                            (S_ORDER_CNT, s_order_cnt),
                            (S_REMOTE_CNT, s_remote_cnt)],
                       where=[(S_I_ID, EQ, ol_i_id[i]),
-                             (S_W_ID, EQ, ol_supply_w_id[i])]).abort_and_throw()
+                             (S_W_ID, EQ, ol_supply_w_id[i])]).ok_or_throw()
             ol_amount = ol_quantity[i] * i_price
             brand_generic = 'B' if re.search('ORIGINAL', i_data) and re.search('ORIGINAL', s_data) else 'G'
 
             self._client.insert(
                         table=ORDER_LINE,
                         rows=(d_next_o_id, d_id, w_id, i, ol_i_id[i], ol_supply_w_id[i], order_time, ol_quantity[i],
-                            ol_amount, "'" + s_dist[d_id - 1] + "'")).abort_and_throw()
+                            ol_amount, "'" + s_dist[d_id - 1] + "'")).ok_or_throw()
 
             total_amount += ol_amount
 
@@ -532,19 +537,19 @@ class TpccDriver:
         res = self._client.select(
                         table=WAREHOUSE,
                         col=(W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_YTD),
-                        where=(W_ID, EQ, w_id)).empty_or_throw()
+                        where=(W_ID, EQ, w_id)).is_not_empty_or_throw()
 
         w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_ytd = res.data[0]
         # w_ytd = eval(w_ytd)
         self._client.update(
                   table=WAREHOUSE,
                   row=(W_YTD, W_YTD + '+' + str(h_amount)),
-                  where=(W_ID, EQ, w_id)).abort_and_throw()
+                  where=(W_ID, EQ, w_id)).ok_or_throw()
 
         res = self._client.select(
                         table=DISTRICT,
                         col=(D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_YTD),
-                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
+                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
         d_name, d_street_1, d_street_2, d_city, d_state, d_zip, d_ytd = res.data[0]
 
@@ -552,7 +557,7 @@ class TpccDriver:
         self._client.update(
                   table=DISTRICT,
                   row=(D_YTD, D_YTD + '+' + str(h_amount)),
-                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).abort_and_throw()
+                  where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).ok_or_throw()
 
         if type(c_query) == str:
             c_query = "'" + c_query + "'"
@@ -567,7 +572,7 @@ class TpccDriver:
                                     (C_D_ID, EQ, c_d_id)],
                             # order_by=C_FIRST,
                             # asc=True
-                            ).empty_or_throw()
+                            ).is_not_empty_or_throw()
             res = res.data[0]
 
         else:
@@ -578,7 +583,7 @@ class TpccDriver:
                                     C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
                             where=[(C_ID, EQ, c_query),
                                     (C_W_ID, EQ, c_w_id),
-                                    (C_D_ID, EQ, c_d_id)]).empty_or_throw()
+                                    (C_D_ID, EQ, c_d_id)]).is_not_empty_or_throw()
             res = res.data[0]
             c_id, c_first, c_midele, c_last, \
                 c_street_1, c_street_2, c_city, c_state, \
@@ -593,27 +598,27 @@ class TpccDriver:
                   row=[(C_BALANCE, c_balance + h_amount),
                        (C_YTD_PAYMENT, c_ytd_payment + 1),
                        (C_PAYMENT_CNT, c_payment_cnt + 1)],
-                  where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).abort_and_throw()
+                  where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).ok_or_throw()
         if c_credit == 'BC':
             res = self._client.select(
                                 table=CUSTOMER,
                                 col=(C_DATA,),
                                 where=[(C_ID, EQ, c_id),
                                         (C_W_ID, EQ, c_w_id),
-                                        (C_D_ID, EQ, c_d_id)]).empty_or_throw()
+                                        (C_D_ID, EQ, c_d_id)]).is_not_empty_or_throw()
             c_data = (''.join(map(str, [c_id, c_d_id, c_w_id, d_id, h_amount]))
                         + res.data[0][0])[0:DATA_MAX]
             self._client.update(
                       table=CUSTOMER,
                       row=(C_DATA, "'" + c_data + "'"),
-                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).abort_and_throw()
+                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).ok_or_throw()
 
         # 4 blank space
         h_data = w_name + '    ' + d_name
         self._client.insert(
                   table=HISTORY,
                   rows=(c_id, c_d_id, c_w_id, d_id, w_id, "'" + current_time() + "'", h_amount,
-                        "'" + h_data + "'")).abort_and_throw()
+                        "'" + h_data + "'")).ok_or_throw()
 
         self._client.commit()
         # self.logger.info('- Payment')
@@ -639,7 +644,7 @@ class TpccDriver:
                             col=(COUNT(C_ID, "count_c_id"),),
                             where=[(C_LAST, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
-                                    (C_D_ID, EQ, d_id)]).empty_or_throw()
+                                    (C_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
             customer_count = int(res.data[0][0])
             if customer_count == 0:
@@ -655,7 +660,7 @@ class TpccDriver:
                                     (C_W_ID, EQ, w_id),
                                     (C_D_ID, EQ, d_id)],
                             order_by=C_FIRST,
-                            asc=True).empty_or_throw()
+                            asc=True).is_not_empty_or_throw()
 
             # 根据 TPC-C 规范, 选择中间的客户
             middle_index = customer_count // 2
@@ -668,7 +673,7 @@ class TpccDriver:
                             col=(C_ID, C_BALANCE, C_FIRST, C_MIDDLE, C_LAST),
                             where=[(C_ID, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
-                                    (C_D_ID, EQ, d_id)]).empty_or_throw()
+                                    (C_D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
             c_id, c_balance, c_first, c_middle, c_last = res.data[0]
             c_id = int(c_id)
@@ -682,7 +687,7 @@ class TpccDriver:
                             (O_C_ID, EQ, c_id)],
                         order_by=O_ID,
                         asc=False  # 降序，获取最新的订单
-                        ).empty_or_throw()
+                        ).is_not_empty_or_throw()
 
         if len(res.data) == 0:
             # 该客户没有订单，正常结束事务
@@ -698,7 +703,7 @@ class TpccDriver:
                         col=(OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D),
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
-                            (OL_O_ID, EQ, o_id)]).empty_or_throw()
+                            (OL_O_ID, EQ, o_id)]).is_not_empty_or_throw()
 
         order_lines = res.data  # 获取所有订单行
 
@@ -722,34 +727,34 @@ class TpccDriver:
                             where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id)],
                             # order_by=NO_O_ID,
                             # asc=True
-                            ).empty_or_throw()
+                            ).is_not_empty_or_throw()
 
             o_id = int(res.data[0][0])
             self._client.delete(
                       table=NEW_ORDERS,
-                      where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id), (NO_O_ID, EQ, o_id)]).abort_and_throw()
+                      where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id), (NO_O_ID, EQ, o_id)]).ok_or_throw()
 
             res = self._client.select(
                             table=ORDERS,
                             col=(O_C_ID,),
-                            where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).empty_or_throw()
+                            where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
             o_c_id = res.data[0][0]
             o_c_id = int(o_c_id)
 
             self._client.update(
                       table=ORDERS,
                       row=(O_CARRIER_ID, o_carrier_id),
-                      where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).abort_and_throw()
+                      where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).ok_or_throw()
 
             res = self._client.select(
                             table=ORDER_LINE,
-                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
+                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).is_not_empty_or_throw()
             order_lines = res.data
 
             res = self._client.select(
                             table=ORDER_LINE,
                             col=(SUM(OL_AMOUNT),),
-                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).empty_or_throw()
+                            where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).is_not_empty_or_throw()
             ol_amount = float(res.data[0][0])
 
             for line in order_lines:
@@ -757,12 +762,12 @@ class TpccDriver:
                           table=ORDER_LINE,
                           row=(OL_DELIVERY_D, "'" + current_time() + "'"),
                           where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id),
-                                 (OL_O_ID, EQ, int(line[0]))]).abort_and_throw()
+                                 (OL_O_ID, EQ, int(line[0]))]).ok_or_throw()
 
             res = self._client.select(
                             table=CUSTOMER,
                             col=(C_BALANCE, C_DELIVERY_CNT),
-                            where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).empty_or_throw()
+                            where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).is_not_empty_or_throw()
             c_balance, c_delivery_cnt = res.data[0]
             c_balance = float(c_balance)
             c_delivery_cnt = int(c_delivery_cnt)
@@ -771,7 +776,7 @@ class TpccDriver:
             self._client.update(
                       table=CUSTOMER,
                       row=[(C_BALANCE, c_balance + ol_amount), (C_DELIVERY_CNT, c_delivery_cnt + 1)],
-                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).abort_and_throw()
+                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).ok_or_throw()
         self._client.commit()
         t2 = time.time()
         # put_txn(lock,Delivery,t2-t1,True)
@@ -788,7 +793,7 @@ class TpccDriver:
         res = self._client.select(
                         table=DISTRICT,
                         col=(D_NEXT_O_ID,),
-                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).empty_or_throw()
+                        where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
         d_next_o_id = int(res.data[0][0])
 
@@ -798,7 +803,7 @@ class TpccDriver:
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
                             (OL_O_ID, LT, d_next_o_id - 20),
-                            (OL_O_ID, LT, d_next_o_id)]).empty_or_throw()
+                            (OL_O_ID, LT, d_next_o_id)]).is_not_empty_or_throw()
 
         order_lines = res.data
         # self.logger.info(order_lines)
@@ -812,7 +817,7 @@ class TpccDriver:
                             col=(S_QUANTITY,),
                             where=[(S_I_ID, EQ, item),
                                 (S_W_ID, EQ, w_id),
-                                (S_QUANTITY, LT, level)]).empty_or_throw()
+                                (S_QUANTITY, LT, level)]).is_not_empty_or_throw()
 
             cur_quantity = int(res.data[0][0])
             # low_stock += eval(cur_quantity)

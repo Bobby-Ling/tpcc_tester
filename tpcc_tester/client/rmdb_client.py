@@ -49,25 +49,25 @@ class RMDBClient(DBClient):
 
             if not recv_buf:
                 self.logger.warning("Connection closed by server")
-                return Result(ServerState.DOWN, [], [], "Connection closed")
+                return Result(ServerState.DOWN, [], [], "Connection closed", None, sql)
 
             result_str = recv_buf.decode().replace("\x00", "")
 
             # 解析结果状态
             if result_str.startswith('abort') or result_str.startswith('ABORT'):
-                return Result(ServerState.ABORT, [], [], result_str)
+                return Result(ServerState.ABORT, [], [], result_str, recv_buf, sql)
             elif result_str.startswith('Error') or result_str.startswith('ERROR'):
-                return Result(ServerState.ERROR, [], [], result_str)
+                return Result(ServerState.ERROR, [], [], result_str, recv_buf, sql)
             else:
                 # 解析查询结果
                 raw_data = self._parse_query_result(result_str)
                 metadata = raw_data[0] if len(raw_data) > 0 else []
                 data = raw_data[1:] if len(raw_data) > 1 else []
-                return Result(ServerState.OK, metadata, data, result_str, raw_data)
+                return Result(ServerState.OK, metadata, data, result_str, raw_data, sql)
 
         except Exception as e:
-            self.logger.error(f"Error sending command: {e}")
-            return Result(ServerState.ERROR, [], [], str(e), e)
+            self.logger.exception(f"Error sending command: {sql}, error: {e}")
+            return Result(ServerState.ERROR, [], [], str(e), e, sql)
 
     def _parse_query_result(self, result_str: str) -> List[List[Any]]:
         """解析查询结果字符串为结构化数据"""

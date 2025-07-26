@@ -4,7 +4,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from typing import Callable, final
 
-from tpcc_tester.common import ServerState, Result, setup_logging, TransactionAbort, ResultEmpty
+from tpcc_tester.common import ServerState, Result, setup_logging, TransactionError, ResultEmpty
 
 # Operator
 ALL = '*'
@@ -64,6 +64,14 @@ class DBClient(ABC):
             file_formatter='%(message)s',
             log_file=f'{self.logger.name}.log.sql'
         )
+        self.sql_logic_logger = setup_logging(
+            self.logger.name + '_slt',
+            console_level=logging.ERROR,
+            file_level=logging.DEBUG,
+            console_formatter='%(message)s',
+            file_formatter='%(message)s',
+            log_file=f'{self.logger.name}.log.logic.sql'
+        )
 
     @abstractmethod
     def connect(self) -> ServerState:
@@ -89,19 +97,39 @@ class DBClient(ABC):
         # 目前未使用
         def wrapper(self: 'DBClient', *args, **kwargs):
             result = func(self, *args, **kwargs)
-            result.empty_or_throw()
+            result.is_not_empty_or_throw()
             return result
         return wrapper
 
     def append_record(self, sql: str, result: Result) -> None:
+        # log result_str
         self.sql_logger.info(f"{sql}")
         self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
-        if result.state == ServerState.ERROR:
-            raise Exception(result.result_str)
+        # log data
+        self.sql_logic_logger.info(f"{sql}")
+        # 对result.data的每一行按字符串顺序排序后输出
+        # tuple 支持字典序比较
+        sorted_data = sorted(result.data, key=lambda row: tuple(str(item) for item in row))
+        # sorted_data = [result.metadata] + sorted_data
+        self.sql_logic_logger.info(f"{'\n'.join([f'\n-- {row}' for row in sorted_data])}\n")
+        # if result.state == ServerState.ERROR:
+        #     raise Exception(result.result_str)
         # 记录sql
         result.sql = sql
 
+        self.logger.debug("exec sql: %s, result: %s", sql, result)
+
         # self.sql_logger.info("-" * 50)
+
+    @staticmethod
+    def ignore_exception(func: Callable[..., Result]):
+        def wrapper(self: 'DBClient', *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
+                return Result(ServerState.ERROR, [], [], f"Error: {str(e)}")
+        return wrapper
 
     @abstractmethod
     @log_record
