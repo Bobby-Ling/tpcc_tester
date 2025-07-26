@@ -49,7 +49,12 @@ def get_c_last(k=1000, run=False):
 def current_time():
     # return str(datetime.datetime.now())[:19]
     # change to 1752908861962
-    return str(int(datetime.datetime.now().timestamp() * 1000))
+    # return str(int(datetime.datetime.now().timestamp() * 1000))
+    if not hasattr(current_time, 'time'):
+        current_time.time = 1752908861962
+    current_time.time += 1
+    return str(current_time.time)
+
 
 
 def get_c_id():

@@ -7,6 +7,7 @@ from typing import List
 from multiprocessing import Process
 import pathlib
 import sys
+import random
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
@@ -53,9 +54,13 @@ class TestRunner:
         # driver.load()  # 加载csv数据到9张表
         driver.delay_close()
 
-    def test(self, tid, txns=150, txn_prob=None):
-        self.logger.info(f'+ Test_{tid} Begin(txns: {txns}, txn_prob: {txn_prob})')
+    def test(self, tid, txns=150, txn_prob=None, seed: int=42):
+        self.logger.info(f'+ Test_{tid} Begin(txns: {txns}, txn_prob: {txn_prob}, seed: {seed})')
         # Driver每个线程一个
+        # random seed 不会从父进程复制
+        # https://152334h.github.io/blog/multiprocessing-and-random/
+        import random
+        random.seed(seed + tid)
         driver = TpccDriver.from_type(self.client_type, scale=CNT_W, recorder=self.recorder)
         driver.run_test(txns, txn_prob)
         self.logger.info(f'- Test_{tid} Finished')
@@ -71,6 +76,7 @@ def main():
     parser.add_argument('--ro', type=int, help='Read only transaction phase time')
     parser.add_argument('--thread', type=int, help='Thread number')
     parser.add_argument('--client', type=str, default='rmdb', choices=['rmdb', 'mysql', 'slt', 'sql'], help='Client type')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
 
     args = parser.parse_args()
     prepare: bool = args.prepare
@@ -80,6 +86,7 @@ def main():
     ro: int = args.ro
     thread_num: int = args.thread
     client_type = ClientType(args.client)
+    seed: int = args.seed
 
     print(f"prepare: {prepare}, analyze: {analyze}, clean: {clean}, rw: {rw}, ro: {ro}, thread: {thread_num}, client: {client_type}")
 
@@ -107,7 +114,7 @@ def main():
         if rw:
             for i in range(thread_num):
                 process_list.append(
-                    Process(target=runner.test, args=(i + 1, rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23])))
+                    Process(target=runner.test, args=(i + 1, rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], seed)))
                 process_list[i].start()
 
             for i in range(thread_num):
@@ -116,7 +123,7 @@ def main():
         process_list = []
         if ro:
             for i in range(thread_num):
-                process_list.append(Process(target=runner.test, args=(i + 1, ro, [0, 0, 0, 0.5, 0.5])))
+                process_list.append(Process(target=runner.test, args=(i + 1, ro, [0, 0, 0, 0.5, 0.5], seed)))
                 process_list[i].start()
 
             for i in range(thread_num):
