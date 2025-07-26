@@ -1,0 +1,8 @@
+create index idx_warehouse on warehouse(w_id);
+create index idx_district on district(d_w_id, d_id);
+create index idx_customer on customer(c_w_id, c_d_id, c_id);
+create index idx_new_orders on new_orders(no_w_id, no_d_id, no_o_id);
+create index idx_orders on orders(o_w_id, o_d_id, o_id);
+create index idx_order_line on order_line(ol_w_id, ol_d_id, ol_o_id, ol_number);
+create index idx_item on item(i_id);
+create index idx_stock on stock(s_w_id, s_i_id);

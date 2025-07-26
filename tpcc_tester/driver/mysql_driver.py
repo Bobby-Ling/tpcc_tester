@@ -15,4 +15,5 @@ class MySQLDriver(TpccDriver):
 
     @override
     def load_data(self):
+        self.send_file(f"{project_dir}/db/create_index.mysql")
         self.send_file(f"{project_dir}/db/load_csvs.mysql")
