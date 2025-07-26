@@ -15,6 +15,40 @@ class RMDBClient(DBClient):
         super().__init__(db, port)
         self.socket = None
 
+    @staticmethod
+    def sendall(sock: socket.socket, data: str):
+        sock.sendall(f"{data}\0".encode())
+
+    # @staticmethod
+    # def recvall(sock: socket.socket, buf_size: int = MAX_MEM_BUFFER_SIZE):
+    #     data = None
+    #     while True:
+    #         packet = sock.recv(buf_size)
+    #         if not packet:  # Important!!
+    #             break
+    #         if data is None:
+    #             data = bytearray()
+    #         data.extend(packet)
+    #         if len(packet) < buf_size:
+    #             break
+    #     print(f"len(data): {len(data)}")
+    #     return data
+    @staticmethod
+    def recvall(sock: socket.socket, buf_size: int = MAX_MEM_BUFFER_SIZE, delimiter: bytes = b"\0"):
+        data = b''
+        while True:
+            packet = sock.recv(buf_size)
+            if not packet:  # Important!!
+                break
+            data += packet
+            # if len(packet) < buf_size:
+            #     break
+            # 可以保证send之后才recv; recv时可能数据量很大
+            if delimiter in data:
+                break
+        # print(f"len(data): {len(data)}")
+        return data
+
     @override
     def connect(self) -> ServerState:
         try:
@@ -26,8 +60,8 @@ class RMDBClient(DBClient):
             self.socket.connect((host, self.port))
 
             try:
-                self.socket.sendall("show tables;".encode())
-                recv_buf = self.socket.recv(self.MAX_MEM_BUFFER_SIZE)
+                self.sendall(self.socket, "show tables;")
+                recv_buf = self.recvall(self.socket)
                 if recv_buf:
                     self.logger.debug(f"Connected to RMDB at {self.HOST}:{self.port}")
                     return ServerState.OK
@@ -44,8 +78,8 @@ class RMDBClient(DBClient):
     @override
     def send_cmd(self, sql: str) -> Result:
         try:
-            self.socket.sendall(sql.encode())
-            recv_buf = self.socket.recv(self.MAX_MEM_BUFFER_SIZE)
+            self.sendall(self.socket, sql)
+            recv_buf: bytes = self.recvall(self.socket)
 
             if not recv_buf:
                 self.logger.warning("Connection closed by server")
