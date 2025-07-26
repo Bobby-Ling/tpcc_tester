@@ -29,8 +29,8 @@ class TestRunner:
         self.logger = setup_logging(f"{__name__}")
 
     def clean(self, drop_db: bool = False):
-        # shutil.rmtree(f'{project_dir}/result')
-        # os.mkdir(f'{project_dir}/result')
+        # shutil.rmtree(f'{base_dir}/result')
+        # os.mkdir(f'{base_dir}/result')
         driver = TpccDriver.from_type(self.client_type, scale=1, recorder=None)
         if drop_db:
             try:

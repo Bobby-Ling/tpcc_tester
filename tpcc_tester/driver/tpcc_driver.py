@@ -88,7 +88,7 @@ class TpccDriver:
 
         t_start = time.time()
 
-        for i in range(txns):
+        for i in tqdm(range(txns), desc=f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}==="):
             txn = get_choice(txn_prob)
             ret = ServerState.ABORT
 
@@ -227,6 +227,7 @@ class TpccDriver:
     def build(self):
         self.logger.info("Build table schema...")
         self.send_file(f"{project_dir}/db/create_tables.sql")
+        # self.send_file(f"{project_dir}/db/create_index.sql")
 
     @RMDBClient.ignore_exception
     def drop(self):
