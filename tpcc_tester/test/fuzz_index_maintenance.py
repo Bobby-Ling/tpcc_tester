@@ -88,6 +88,11 @@ class IndexFuzzer:
         drop_index_sql = f"drop index {self.TABLE_NAME}({index_cols_str});"
         self._execute_sql(drop_index_sql)
 
+    def _action_recreate_index(self):
+        print("\nAction: RECREATE INDEX")
+        self._action_drop_index()
+        self._action_create_index()
+
     def _action_insert(self):
         print("\nAction: INSERT")
         new_values = self._generate_random_values()
@@ -200,8 +205,15 @@ class IndexFuzzer:
         self.connect()
         self.setup_test_table()
 
-        actions = [self._action_insert, self._action_update, self._action_delete, self._action_drop_index, self._action_create_index]
-        weights = [0.4, 0.3, 0.2, 0.05, 0.05]
+        actions = [
+            self._action_insert,
+            self._action_update,
+            self._action_delete,
+            self._action_drop_index,
+            self._action_create_index,
+            self._action_recreate_index,
+        ]
+        weights = [0.4, 0.3, 0.2, 0.02, 0.02, 0.06]
 
         for i in range(iterations):
             # 根据权重随机选择一个操作
