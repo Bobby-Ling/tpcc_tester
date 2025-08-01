@@ -10,7 +10,9 @@ from tpcc_tester.db.table_layouts import *
 from tpcc_tester.client import *
 from tpcc_tester.util import *
 from tpcc_tester.record.record import *
-from tpcc_tester.config import *
+from tpcc_tester.config import Config
+
+config = Config()
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
@@ -18,19 +20,16 @@ project_dir = file_dir.parent
 
 # 定义每个表的参数
 tables_info = [
-    (WAREHOUSE, 'count_warehouse', CNT_W, 'count_warehouse'),
-    (DISTRICT, 'count_district', CNT_DISTRICT, 'count_district'),
-    (CUSTOMER, 'count_customer', CNT_CUSTOMER, 'count_customer'),
-    (HISTORY, 'count_history', CNT_HISTORY, 'count_history'),
-    (NEW_ORDERS, 'count_new_orders', CNT_NEW_ORDERS, 'count_new_orders'),
-    (ORDERS, 'count_orders', CNT_ORDERS, 'count_orders'),
-    (ORDER_LINE, 'count_order_line', CNT_ORDER_LINE, 'count_order_line'),
-    (ITEM, 'count_item', CNT_ITEM, 'count_item'),
-    (STOCK, 'count_stock', CNT_STOCK, 'count_stock')
+    (WAREHOUSE, 'count_warehouse', config.CNT_W, 'count_warehouse'),
+    (DISTRICT, 'count_district', config.CNT_DISTRICT, 'count_district'),
+    (CUSTOMER, 'count_customer', config.CNT_CUSTOMER, 'count_customer'),
+    (HISTORY, 'count_history', config.CNT_HISTORY, 'count_history'),
+    (NEW_ORDERS, 'count_new_orders', config.CNT_NEW_ORDERS, 'count_new_orders'),
+    (ORDERS, 'count_orders', config.CNT_ORDERS, 'count_orders'),
+    (ORDER_LINE, 'count_order_line', config.CNT_ORDER_LINE, 'count_order_line'),
+    (ITEM, 'count_item', config.CNT_ITEM, 'count_item'),
+    (STOCK, 'count_stock', config.CNT_STOCK, 'count_stock')
 ]
-
-W_ID_MAX = CNT_W + 1
-D_ID_MAX = 11
 
 
 class TpccDriver:
@@ -94,7 +93,7 @@ class TpccDriver:
 
             # 预生成操作
             if txn == 0:  # NewOrder
-                w_id = get_w_id(CNT_W)
+                w_id = get_w_id(config.CNT_W)
                 d_id = get_d_id()  # 获得地区id，1～10的随机数
                 c_id = get_c_id()  # 获得客户id，1～3000的随机数
                 ol_i_id = get_ol_i_id()  # 获得新订单中的商品id列表
@@ -102,23 +101,23 @@ class TpccDriver:
                 ol_quantity = get_ol_quantity(len(ol_i_id))  # 为新订单中每个商品设置购买数量
 
             elif txn == 1:  # Payment
-                w_id = get_w_id(CNT_W)
+                w_id = get_w_id(config.CNT_W)
                 d_id = get_d_id()  # 获得地区id，1～10的随机数
                 query_cus = query_cus_by(True)
                 h_amount = get_h_amount()
                 c_w_id, c_d_id = get_c_w_id_d_id(w_id, d_id, self._scale)  # 获得客户所属的仓库id和地区id
 
             elif txn == 2:  # Delivery
-                w_id = get_w_id(CNT_W)
+                w_id = get_w_id(config.CNT_W)
                 o_carrier_id = get_o_carrier_id()
 
             elif txn == 3:  # OrderStatus
-                w_id = get_w_id(CNT_W)
+                w_id = get_w_id(config.CNT_W)
                 d_id = get_d_id()  # 获得地区id，1～10的随机数
                 query_cus = query_cus_by()
 
             elif txn == 4:  # StockLevel
-                w_id = get_w_id(CNT_W)
+                w_id = get_w_id(config.CNT_W)
                 d_id = get_d_id()  # 获得地区id，1～10的随机数
                 threshold = get_level_threshold()
 
@@ -301,8 +300,8 @@ class TpccDriver:
         d_id = 0
 
         try:
-            for w_id in range(1, W_ID_MAX):
-                for d_id in range(1, D_ID_MAX):
+            for w_id in range(1, config.W_ID_MAX):
+                for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
                                  table=DISTRICT,
                                  col=(D_NEXT_O_ID,),  # 加逗号，否则会被认为是字符串，而不是元组
@@ -334,8 +333,8 @@ class TpccDriver:
 
             self.logger.info("consistency check for district, orders and new_orders pass!")
 
-            for w_id in range(1, W_ID_MAX):
-                for d_id in range(1, D_ID_MAX):
+            for w_id in range(1, config.W_ID_MAX):
+                for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
                                  table=NEW_ORDERS,
                                  col=(COUNT(NO_O_ID),),
@@ -367,8 +366,8 @@ class TpccDriver:
 
             self.logger.info("consistency check for new_orders pass!")
 
-            for w_id in range(1, W_ID_MAX):
-                for d_id in range(1, D_ID_MAX):
+            for w_id in range(1, config.W_ID_MAX):
+                for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
                                  table=ORDERS,
                                  col=(SUM(O_OL_CNT),),
@@ -405,11 +404,12 @@ class TpccDriver:
                          ).is_not_empty_or_throw()
 
             cnt_orders = int(res.data[0][0])
-            if cnt_orders == CNT_ORDERS + cnt_new_orders:
+            if cnt_orders == config.CNT_ORDERS + cnt_new_orders:
                 self.logger.info("all pass!")
                 return True
-            self.logger.info(
-                f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={CNT_ORDERS}")
+            self.logger.error(
+                f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={config.CNT_ORDERS}")
+            raise
         except Exception as e:
             self.error_logger.exception(f"Exception occurred; error: {e}, res: {res}")
             self.logger.warning("consistency checking 2 error!")
@@ -599,7 +599,7 @@ class TpccDriver:
                   row=[(C_BALANCE, c_balance + h_amount),
                        (C_YTD_PAYMENT, c_ytd_payment + 1),
                        (C_PAYMENT_CNT, c_payment_cnt + 1)],
-                  where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).ok_or_throw()
+                  where=[(C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id), (C_ID, EQ, c_id)]).ok_or_throw()
         if c_credit == 'BC':
             res = self._client.select(
                                 table=CUSTOMER,
@@ -608,11 +608,11 @@ class TpccDriver:
                                         (C_W_ID, EQ, c_w_id),
                                         (C_D_ID, EQ, c_d_id)]).is_not_empty_or_throw()
             c_data = (''.join(map(str, [c_id, c_d_id, c_w_id, d_id, h_amount]))
-                        + res.data[0][0])[0:DATA_MAX]
+                        + res.data[0][0])[0:config.DATA_MAX]
             self._client.update(
                       table=CUSTOMER,
                       row=(C_DATA, "'" + c_data + "'"),
-                      where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]).ok_or_throw()
+                      where=[(C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id), (C_ID, EQ, c_id)]).ok_or_throw()
 
         # 4 blank space
         h_data = w_name + '    ' + d_name

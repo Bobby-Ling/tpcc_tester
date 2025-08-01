@@ -131,6 +131,7 @@ def setup_global_logging():
     logging.root.addHandler(console_handler)
     file_handler = setup_file_handler("logs/global.log", logging.DEBUG)
     logging.root.addHandler(file_handler)
+    return logging.root
 
 setup_global_logging()
 

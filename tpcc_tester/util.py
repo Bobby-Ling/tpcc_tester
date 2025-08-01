@@ -47,24 +47,27 @@ def get_c_last(k=1000, run=False):
 
 
 def current_time():
-    # return str(datetime.datetime.now())[:19]
-    # change to 1752908861962
-    # return str(int(datetime.datetime.now().timestamp() * 1000))
-    if not hasattr(current_time, 'time'):
-        current_time.time = 1752908861962
-    current_time.time += 1
-    return str(current_time.time)
+    # Generate a formatted datetime string in YYYY-MM-DD HH:MM:SS format
+    # to align with the C++ data generator format
+    if not hasattr(current_time, 'start_time'):
+        current_time.start_time = datetime.datetime(2024, 1, 1, 12, 0, 0)
+        current_time.counter = 0
+    
+    # Increment time by one second for each call
+    current_time.counter += 1
+    new_time = current_time.start_time + datetime.timedelta(seconds=current_time.counter)
+    return new_time.strftime('%Y-%m-%d %H:%M:%S')
 
 
 
 def get_c_id():
-    return NURand(1023, 1, 3001, C=_C_RUN)
+    return NURand(1023, 1, 3000, C=_C_RUN)
 
 
 def get_ol_i_id():
     ol_cnt = random.randrange(5, 16)
     rbk = random.randrange(100)
-    ret = [NURand(8191, 1, 100001, C=_C_RUN) for i in range(ol_cnt)]
+    ret = [NURand(8191, 1, 100000, C=_C_RUN) for i in range(ol_cnt)]
     # if rbk == 0:
     #     ret[-1] = 100001  # unused item number
     return ret

@@ -1,13 +1,8 @@
-import argparse
-from enum import Enum
-import os
-import shutil
 import time
 from typing import List
 from multiprocessing import Process
 import pathlib
 import sys
-import random
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
@@ -17,8 +12,11 @@ sys.path.append(str(project_dir.parent))
 
 from tpcc_tester.client import *
 from tpcc_tester.record.record import Recorder, get_recorder_instance
-from tpcc_tester.driver.tpcc_driver import CNT_W, TpccDriver
+from tpcc_tester.driver.tpcc_driver import TpccDriver
 from tpcc_tester.common import setup_logging
+from tpcc_tester.config import Config
+
+config = Config()
 
 # TestRunner只需要一个就行
 class TestRunner:
@@ -47,8 +45,9 @@ class TestRunner:
 
         driver.load_data()
 
-        driver.count_star()
-        driver.consistency_check()  # 一致性校验
+        if config.validate:
+            driver.count_star()
+            driver.consistency_check()  # 一致性校验
         # driver.build()  # 创建9个tables
         # driver.create_index() # 建立除history表外其余表的索引
         # driver.load()  # 加载csv数据到9张表
@@ -61,46 +60,26 @@ class TestRunner:
         # https://152334h.github.io/blog/multiprocessing-and-random/
         import random
         random.seed(seed + tid)
-        driver = TpccDriver.from_type(self.client_type, scale=CNT_W, recorder=self.recorder)
+        driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=self.recorder)
         driver.run_test(txns, txn_prob)
         self.logger.info(f'- Test_{tid} Finished')
         driver.delay_close()
 
 # useage: python runner.py --prepare --thread 8 --rw 150 --ro 150 --analyze
 def main():
-    parser = argparse.ArgumentParser(description='Python Script with Thread Number Argument')
-    parser.add_argument('--prepare', action='store_true', help='Enable prepare mode')
-    parser.add_argument('--analyze', action='store_true', help='Enable analyze mode')
-    parser.add_argument('--clean', action='store_true', help='Clean database(execlude with other options)')
-    parser.add_argument('--rw', type=int, help='Read write transaction phase time')
-    parser.add_argument('--ro', type=int, help='Read only transaction phase time')
-    parser.add_argument('--thread', type=int, help='Thread number')
-    parser.add_argument('--client', type=str, default='rmdb', choices=['rmdb', 'mysql', 'slt', 'sql'], help='Client type')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
-
-    args = parser.parse_args()
-    prepare: bool = args.prepare
-    analyze: bool = args.analyze
-    clean: bool = args.clean
-    rw: int = args.rw
-    ro: int = args.ro
-    thread_num: int = args.thread
-    client_type = ClientType(args.client)
-    seed: int = args.seed
-
-    print(f"prepare: {prepare}, analyze: {analyze}, clean: {clean}, rw: {rw}, ro: {ro}, thread: {thread_num}, client: {client_type}")
+    print(f"config: {config}")
 
     recorder = get_recorder_instance()
-    runner = TestRunner(recorder, client_type)
+    runner = TestRunner(recorder, config.client_type)
 
-    if clean:
+    if config.clean:
         print("clean all tables!!!")
         runner.clean(drop_db=True)
         return
 
     # 有perpare说明要drop表
-    runner.clean(drop_db=prepare)
-    if prepare:
+    runner.clean(drop_db=config.prepare)
+    if config.prepare:
         lt1 = time.time()
         runner.prepare()
         runner.logger.info(f'load time: {time.time() - lt1}')
@@ -108,39 +87,41 @@ def main():
     t1 = 0
     t2 = 0
     t3 = 0
-    if thread_num:
+    if config.thread_num:
         t1 = time.time()
         process_list: List[Process] = []
-        if rw:
-            for i in range(thread_num):
+        if config.rw:
+            for i in range(config.thread_num):
                 process_list.append(
-                    Process(target=runner.test, args=(i + 1, rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], seed)))
+                    Process(target=runner.test, args=(i + 1, config.rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], config.seed)))
                 process_list[i].start()
 
-            for i in range(thread_num):
+            for i in range(config.thread_num):
                 process_list[i].join()
         t2 = time.time()
         process_list = []
-        if ro:
-            for i in range(thread_num):
-                process_list.append(Process(target=runner.test, args=(i + 1, ro, [0, 0, 0, 0.5, 0.5], seed)))
+        if config.ro:
+            for i in range(config.thread_num):
+                process_list.append(Process(target=runner.test, args=(i + 1, config.ro, [0, 0, 0, 0.5, 0.5], config.seed)))
                 process_list[i].start()
 
-            for i in range(thread_num):
+            for i in range(config.thread_num):
                 process_list[i].join()
         t3 = time.time()
 
-    driver = TpccDriver.from_type(client_type, scale=CNT_W, recorder=None)
-    driver.consistency_check()
+    if config.validate:
+        driver = TpccDriver.from_type(config.client_type, scale=config.warehouse, recorder=None)
+        driver.consistency_check()
 
-    new_order_success = recorder.output_result()
-    driver.consistency_check2(new_order_success)
+        new_order_success = recorder.output_result()
+        driver.consistency_check2(new_order_success)
 
-    if analyze:
+    if config.analyze:
         print(f'total time of rw txns: {t2 - t1}')
         print(f'total time of ro txns: {t3 - t2}')
         print(f'total time: {t3 - t1}')
-        print(f'tpmC: {new_order_success / ((t3 - t1) / 60)}')
+        if config.validate:
+            print(f'tpmC: {new_order_success / ((t3 - t1) / 60)}')
 
 
 if __name__ == '__main__':

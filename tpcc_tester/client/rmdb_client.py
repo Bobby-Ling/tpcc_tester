@@ -101,7 +101,8 @@ class RMDBClient(DBClient):
 
         except Exception as e:
             self.logger.exception(f"Error sending command: {sql}, error: {e}")
-            return Result(ServerState.ERROR, [], [], str(e), e, sql)
+            exit(1)
+            # return Result(ServerState.ERROR, [], [], str(e), e, sql)
 
     def _parse_query_result(self, result_str: str) -> List[List[Any]]:
         """解析查询结果字符串为结构化数据"""

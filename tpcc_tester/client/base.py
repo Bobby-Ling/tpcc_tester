@@ -104,7 +104,7 @@ class DBClient(ABC):
     def append_record(self, sql: str, result: Result) -> None:
         # log result_str
         self.sql_logger.info(f"{sql}")
-        self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
+        self.sql_logger.info(f"{''.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
         # log data
         self.sql_logic_logger.info(f"{sql}")
         # 对result.data的每一行按字符串顺序排序后输出
@@ -123,11 +123,11 @@ class DBClient(ABC):
 
     @staticmethod
     def ignore_exception(func: Callable[..., Result]):
-        def wrapper(self: 'DBClient', *args, **kwargs):
+        def wrapper(self, *args, **kwargs):
             try:
                 return func(self, *args, **kwargs)
             except Exception as e:
-                self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
+                # self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
                 return Result(ServerState.ERROR, [], [], f"Error: {str(e)}")
         return wrapper
 
