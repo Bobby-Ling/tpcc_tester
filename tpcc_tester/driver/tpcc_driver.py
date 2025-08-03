@@ -284,6 +284,10 @@ class TpccDriver:
                 res = ServerState.OK
             except TransactionError as e:
                 self.logger.warning(f"Transaction aborted; error: {e}")
+                if e.result.state == ServerState.ERROR:
+                    raise
+                # todo: 主动abort和被动abort区分
+                # self._client.abort()
                 res = ServerState.ABORT
             except Exception as e:
                 self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
