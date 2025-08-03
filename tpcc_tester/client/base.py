@@ -111,7 +111,7 @@ class DBClient(ABC):
         # tuple 支持字典序比较
         sorted_data = sorted(result.data, key=lambda row: tuple(str(item) for item in row))
         # sorted_data = [result.metadata] + sorted_data
-        self.sql_logic_logger.info(f"{'\n'.join([f'\n-- {row}' for row in sorted_data])}\n")
+        self.sql_logic_logger.info(f"{''.join([f'\n-- {row}' for row in sorted_data])}\n")
         # if result.state == ServerState.ERROR:
         #     raise Exception(result.result_str)
         # 记录sql
