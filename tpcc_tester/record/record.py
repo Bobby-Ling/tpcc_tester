@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import pathlib
 import sqlite3
@@ -31,7 +32,7 @@ class Recorder:
         self.db_path.unlink(missing_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.logger.debug(f"db_path: {self.db_path.absolute()}")
-        self.lock = threading.Lock()
+        self.lock = multiprocessing.Lock()
         self.build_db()
 
     def build_db(self):
