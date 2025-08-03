@@ -90,7 +90,7 @@ def setup_console_handler(level: int = logging.INFO, console_formatter: Optional
     # %v -> 消息内容
     if console_formatter is None:
         console_formatter = colorlog.ColoredFormatter(
-            '[%(log_color)s%(asctime)s.%(msecs)03d%(reset)s][%(log_color)s%(levelname)s%(reset)s][%(name)s][%(filename)s:%(lineno)d][%(funcName)s] %(message)s',
+            '[%(log_color)s%(asctime)s.%(msecs)03d%(reset)s][%(log_color)s%(levelname)s%(reset)s][%(name)s][%(filename)s:%(lineno)d][%(funcName)s][%(processName)s][%(process)d] %(message)s',
             datefmt='%H:%M:%S',
             log_colors={
                 'DEBUG': 'cyan',
@@ -115,7 +115,7 @@ def setup_file_handler(log_file: str, level: int = logging.DEBUG, file_formatter
     file_handler = logging.FileHandler(log_file, mode='w')
     if file_formatter is None:
         file_formatter = logging.Formatter(
-            '[%(asctime)s.%(msecs)03d][%(levelname)s][%(name)s][%(filename)s:%(lineno)d][%(funcName)s] %(message)s',
+            '[%(asctime)s.%(msecs)03d][%(levelname)s][%(name)s][%(filename)s:%(lineno)d][%(funcName)s][%(processName)s][%(process)d] %(message)s',
             datefmt='%H:%M:%S'
         )
     else:
