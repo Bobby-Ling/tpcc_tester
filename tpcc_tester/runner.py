@@ -61,7 +61,10 @@ class TestRunner:
         import random
         random.seed(seed + tid)
         driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=self.recorder)
-        driver.run_test(txns, txn_prob)
+        try:
+            driver.run_test(txns, txn_prob)
+        except KeyboardInterrupt:
+            self.logger.info(f'Test_{tid} Canceled')
         self.logger.info(f'- Test_{tid} Finished')
         driver.delay_close()
 
@@ -109,19 +112,19 @@ def main():
                 process_list[i].join()
         t3 = time.time()
 
+    new_order_success = recorder.output_result()
+
     if config.validate:
         driver = TpccDriver.from_type(config.client_type, scale=config.warehouse, recorder=None)
         driver.consistency_check()
 
-        new_order_success = recorder.output_result()
         driver.consistency_check2(new_order_success)
 
     if config.analyze:
         print(f'total time of rw txns: {t2 - t1}')
         print(f'total time of ro txns: {t3 - t2}')
         print(f'total time: {t3 - t1}')
-        if config.validate:
-            print(f'tpmC: {new_order_success / ((t3 - t1) / 60)}')
+        print(f'tpmC: {new_order_success / ((t3 - t1) / 60)}')
 
 
 if __name__ == '__main__':
