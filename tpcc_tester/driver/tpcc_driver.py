@@ -87,7 +87,7 @@ class TpccDriver:
 
         t_start = time.time()
 
-        for i in tqdm(range(txns), desc=f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}==="):
+        for i in tqdm(range(txns), desc=f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}===\n"):
             txn = get_choice(txn_prob)
             ret = ServerState.ABORT
 
@@ -331,7 +331,7 @@ class TpccDriver:
                     max_no_o_id = int(res.data[0][0])
 
                     if d_next_o_id - 1 != max_o_id or d_next_o_id - 1 != max_no_o_id:
-                        self.logger.info(
+                        self.logger.error(
                             f"d_next_o_id={d_next_o_id}, max(o_id)={max_o_id}, max(no_o_id)={max_no_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
@@ -364,7 +364,7 @@ class TpccDriver:
                     min_no_o_id = int(res.data[0][0])
 
                     if num_no_o_id != max_no_o_id - min_no_o_id + 1:
-                        self.logger.info(
+                        self.logger.error(
                             f"count(no_o_id)={num_no_o_id}, max(no_o_id)={max_no_o_id}, min(no_o_id)={min_no_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
@@ -389,14 +389,14 @@ class TpccDriver:
                     num_ol_o_id = int(float(res.data[0][0]))
 
                     if sum_o_ol_cnt != num_ol_o_id:
-                        self.logger.info(
+                        self.logger.error(
                             f"sum(o_ol_cnt)={sum_o_ol_cnt}, count(ol_o_id)={num_ol_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
             self.logger.info("consistency check for orders and order_line pass!")
 
         except Exception as e:
-            self.error_logger.exception(f"Exception occurred; error: {e}, res: {res}")
+            self.error_logger.exception(f"Exception occurred; error: {e}")
             self.logger.warning("consistency checking error!")
 
     def consistency_check2(self, cnt_new_orders):
@@ -415,7 +415,7 @@ class TpccDriver:
                 f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={config.CNT_ORDERS}")
             raise
         except Exception as e:
-            self.error_logger.exception(f"Exception occurred; error: {e}, res: {res}")
+            self.error_logger.exception(f"Exception occurred; error: {e}")
             self.logger.warning("consistency checking 2 error!")
 
     @transaction_handling
@@ -476,6 +476,7 @@ class TpccDriver:
                             table=ITEM,
                             col=(I_PRICE, I_NAME, I_DATA),
                             where=(I_ID, EQ, ol_i_id[i])).is_not_empty_or_throw()
+            # TPC-C 规范要求, 大约有 1% 的概率, 输入的商品ID是无效的. 在这种情况下, 整个事务必须 回滚 (Abort)
             i_price, i_name, i_data = res.data[0]
             i_price = float(i_price)
 
