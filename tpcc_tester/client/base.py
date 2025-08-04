@@ -4,7 +4,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from typing import Callable, final
 
-from tpcc_tester.common import ServerState, Result, setup_logging, TransactionError, ResultEmpty
+from tpcc_tester.common import ServerState, Result, get_global_lock, setup_logging
 
 # Operator
 ALL = '*'
@@ -93,6 +93,22 @@ class DBClient(ABC):
         return wrapper
 
     @staticmethod
+    def with_global_lock(func: Callable[..., Result]):
+        def wrapper(self: 'DBClient', *args, **kwargs):
+            from tpcc_tester.config import get_config
+            config = get_config()
+            if not config.global_lock:
+                return func(self, *args, **kwargs)
+            lock = get_global_lock("tpcc_tester")
+            lock.acquire(timeout=100)
+            # self.logger.debug(f"lock acquired")
+            result = func(self, *args, **kwargs)
+            lock.release()
+            # self.logger.debug(f"lock released")
+            return result
+        return wrapper
+
+    @staticmethod
     def result_handler(func: Callable[..., Result]):
         # 目前未使用
         def wrapper(self: 'DBClient', *args, **kwargs):
@@ -133,6 +149,7 @@ class DBClient(ABC):
 
     @abstractmethod
     @log_record
+    @with_global_lock
     def send_cmd(self, sql: str) -> Result:
         pass
 

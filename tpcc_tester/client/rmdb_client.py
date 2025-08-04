@@ -75,6 +75,7 @@ class RMDBClient(DBClient):
             return ServerState.DOWN
 
     @DBClient.log_record
+    @DBClient.with_global_lock
     @override
     def send_cmd(self, sql: str) -> Result:
         try:

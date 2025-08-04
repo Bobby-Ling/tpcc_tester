@@ -64,6 +64,7 @@ class Config:
     seed: int = 42
     warehouse: int = 50
     disable_logging: bool = False
+    global_lock: bool = False
 
     CNT_W = warehouse
     CNT_ITEM = 100000
@@ -96,6 +97,7 @@ class Config:
         parser.add_argument('-s', '--seed', type=int, default=42, help='Random seed')
         parser.add_argument('-w', '--warehouse', type=int, default=50, help='Warehouse number')
         parser.add_argument('-l', '--disable-logging', action='store_true', help='Disable logging')
+        parser.add_argument('-g', '--global-lock', action='store_true', help='Enable global lock (at most one send_cmd at a time)')
 
         from tpcc_tester.client.base import ClientType
 
@@ -111,6 +113,7 @@ class Config:
         self.seed: int = args.seed or self.seed
         self.warehouse: int = args.warehouse or self.warehouse
         self.disable_logging: bool = args.disable_logging or self.disable_logging
+        self.global_lock: bool = args.global_lock or self.global_lock
 
         self.CNT_W = self.warehouse
         self.CNT_ITEM = 100000
