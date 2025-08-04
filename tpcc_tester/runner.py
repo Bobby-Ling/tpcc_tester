@@ -14,9 +14,9 @@ from tpcc_tester.client import *
 from tpcc_tester.record.record import Recorder, get_recorder_instance
 from tpcc_tester.driver.tpcc_driver import TpccDriver
 from tpcc_tester.common import setup_logging
-from tpcc_tester.config import Config
+from tpcc_tester.config import get_config
 
-config = Config()
+config = get_config()
 
 # TestRunner只需要一个就行
 class TestRunner:

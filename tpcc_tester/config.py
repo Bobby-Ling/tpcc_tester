@@ -124,3 +124,11 @@ class Config:
 
         self.W_ID_MAX = self.CNT_W + 1
         self.D_ID_MAX = 11
+
+_config = None
+
+def get_config():
+    global _config
+    if _config is None:
+        _config = Config()
+    return _config

@@ -10,9 +10,9 @@ from tpcc_tester.db.table_layouts import *
 from tpcc_tester.client import *
 from tpcc_tester.util import *
 from tpcc_tester.record.record import *
-from tpcc_tester.config import Config
+from tpcc_tester.config import get_config
 
-config = Config()
+config = get_config()
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
