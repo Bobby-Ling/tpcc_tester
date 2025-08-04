@@ -173,7 +173,6 @@ class DBClient(ABC):
     def commit(self) -> Result:
         return self.send_tcl("COMMIT;")
 
-    @final
     def abort(self) -> Result:
         return self.send_tcl("ABORT;")
 

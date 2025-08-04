@@ -39,6 +39,9 @@ class MySQLClient(DBClient):
 
             self.connection.cursor().execute(f"CREATE DATABASE IF NOT EXISTS {self.db};")
             self.connection.cursor().execute(f"USE {self.db};")
+            self.connection.cursor().execute("SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;")
+            # self.connection.cursor().execute("SET GLOBAL TRANSACTION ISOLATION LEVEL SERIALIZABLE;")
+            self.connection.cursor().execute("SELECT @@transaction_isolation;")
 
             self.logger.debug(f"Connected to MySQL at {self.host}:{self.port}/{self.db}")
 
@@ -101,3 +104,7 @@ class MySQLClient(DBClient):
             pass
         finally:
             self.connection = None
+
+    @override
+    def abort(self) -> Result:
+        self.send_tcl("ROLLBACK;")
