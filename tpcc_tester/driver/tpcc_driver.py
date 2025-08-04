@@ -5,7 +5,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from tpcc_tester.client.base import *
-from tpcc_tester.common import setup_logging
+from tpcc_tester.common import ResultEmpty, ServerError, TransactionError, setup_logging
 from tpcc_tester.db.table_layouts import *
 from tpcc_tester.client import *
 from tpcc_tester.util import *
@@ -53,8 +53,8 @@ class TpccDriver:
         self.logger = setup_logging(f"{__name__}")
         self.error_logger = setup_logging(
             f"{self.logger.name}_error",
-            console_level=logging.CRITICAL,
-            file_level=logging.ERROR
+            console_level=logging.WARNING,
+            file_level=logging.WARNING
         )
         self._flag = True
         # self._delivery_q = Queue()
@@ -91,38 +91,15 @@ class TpccDriver:
             txn = get_choice(txn_prob)
             ret = ServerState.ABORT
 
-            # 预生成操作
-            if txn == 0:  # NewOrder
-                w_id = get_w_id(config.CNT_W)
-                d_id = get_d_id()  # 获得地区id，1～10的随机数
-                c_id = get_c_id()  # 获得客户id，1～3000的随机数
-                ol_i_id = get_ol_i_id()  # 获得新订单中的商品id列表
-                ol_supply_w_id = get_ol_supply_w_id(w_id, self._scale, len(ol_i_id))  # 为新订单中每个商品选择一个供应仓库，当前设定就一个供应仓库
-                ol_quantity = get_ol_quantity(len(ol_i_id))  # 为新订单中每个商品设置购买数量
-
-            elif txn == 1:  # Payment
-                w_id = get_w_id(config.CNT_W)
-                d_id = get_d_id()  # 获得地区id，1～10的随机数
-                query_cus = query_cus_by(True)
-                h_amount = get_h_amount()
-                c_w_id, c_d_id = get_c_w_id_d_id(w_id, d_id, self._scale)  # 获得客户所属的仓库id和地区id
-
-            elif txn == 2:  # Delivery
-                w_id = get_w_id(config.CNT_W)
-                o_carrier_id = get_o_carrier_id()
-
-            elif txn == 3:  # OrderStatus
-                w_id = get_w_id(config.CNT_W)
-                d_id = get_d_id()  # 获得地区id，1～10的随机数
-                query_cus = query_cus_by()
-
-            elif txn == 4:  # StockLevel
-                w_id = get_w_id(config.CNT_W)
-                d_id = get_d_id()  # 获得地区id，1～10的随机数
-                threshold = get_level_threshold()
-
             while ret == ServerState.ABORT:
                 if txn == 0:  # NewOrder
+                    w_id = get_w_id(config.CNT_W)
+                    d_id = get_d_id()  # 获得地区id，1～10的随机数
+                    c_id = get_c_id()  # 获得客户id，1～3000的随机数
+                    ol_i_id = get_ol_i_id()  # 获得新订单中的商品id列表
+                    ol_supply_w_id = get_ol_supply_w_id(w_id, self._scale, len(ol_i_id))  # 为新订单中每个商品选择一个供应仓库，当前设定就一个供应仓库
+                    ol_quantity = get_ol_quantity(len(ol_i_id))  # 为新订单中每个商品设置购买数量
+
                     t1 = time.time()
                     ret = self.do_new_order(w_id, d_id, c_id, ol_i_id, ol_supply_w_id, ol_quantity)
                     t2 = time.time()
@@ -130,21 +107,38 @@ class TpccDriver:
                         self._recorder.put_new_order(t2 - t_start)
 
                 elif txn == 1:  # Payment
+                    w_id = get_w_id(config.CNT_W)
+                    d_id = get_d_id()  # 获得地区id，1～10的随机数
+                    query_cus = query_cus_by(True)
+                    h_amount = get_h_amount()
+                    c_w_id, c_d_id = get_c_w_id_d_id(w_id, d_id, self._scale)  # 获得客户所属的仓库id和地区id
+
                     t1 = time.time()
                     ret = self.do_payment(w_id, d_id, c_w_id, c_d_id, query_cus, h_amount)
                     t2 = time.time()
 
                 elif txn == 2:  # Delivery
+                    w_id = get_w_id(config.CNT_W)
+                    o_carrier_id = get_o_carrier_id()
+
                     t1 = time.time()
                     ret = self.do_delivery(w_id, o_carrier_id)
                     t2 = time.time()
 
                 elif txn == 3:  # OrderStatus
+                    w_id = get_w_id(config.CNT_W)
+                    d_id = get_d_id()  # 获得地区id，1～10的随机数
+                    query_cus = query_cus_by()
+
                     t1 = time.time()
                     ret = self.do_order_status(w_id, d_id, query_cus)
                     t2 = time.time()
 
                 elif txn == 4:  # StockLevel
+                    w_id = get_w_id(config.CNT_W)
+                    d_id = get_d_id()  # 获得地区id，1～10的随机数
+                    threshold = get_level_threshold()
+
                     t1 = time.time()
                     ret = self.do_stock_level(w_id, d_id, threshold)
                     t2 = time.time()
@@ -281,18 +275,19 @@ class TpccDriver:
                 return res
             except ResultEmpty as e:
                 self.logger.warning(f"Result is empty; error: {e}")
-                res = ServerState.OK
+                res = ServerState.ABORT
+                self._client.abort()
             except TransactionError as e:
                 self.logger.warning(f"Transaction aborted; error: {e}")
-                if e.result.state == ServerState.ERROR:
-                    raise
-                # todo: 主动abort和被动abort区分
                 # self._client.abort()
                 res = ServerState.ABORT
+            except ServerError as e:
+                self.logger.warning(f"Server error; error: {e}")
+                res = ServerState.ERROR
+                raise e
             except Exception as e:
                 self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
                 exit(-1)
-                raise
             self.logger.info(f"<<<")
             return res
         return wrapper
@@ -642,7 +637,6 @@ class TpccDriver:
             # c_id 为 0, 导致后续查询 orders 表时找不到记录
             # 导致 IndexError, 然后事务 ABORT, 进入死循环
             # 当按姓名查询时, 如果有多个同名客户, 应该选择中间的那个(按 c_first 排序)
-            # 查询结果为空是正常情况, 应该正常返回, 不应该导致事务失败
             c_query = "'" + c_query + "'"
             # 首先查询客户数量
             res = self._client.select(
@@ -654,9 +648,9 @@ class TpccDriver:
 
             customer_count = int(res.data[0][0])
             if customer_count == 0:
-                # 没有找到客户, 正常结束事务
-                self._client.commit()
-                return ServerState.OK
+                # 没有找到客户, 应该abort事务
+                self._client.abort()
+                return ServerState.ABORT
 
             # 查询客户信息, 按 c_first 排序
             res = self._client.select(
@@ -696,9 +690,9 @@ class TpccDriver:
                         ).is_not_empty_or_throw()
 
         if len(res.data) == 0:
-            # 该客户没有订单，正常结束事务
-            self._client.commit()
-            return ServerState.OK
+            # 该客户没有订单，应该abort事务
+            self._client.abort()
+            return ServerState.ABORT
 
         o_id, o_entry_id, o_carrier_id = res.data[0]
         o_id = int(o_id)

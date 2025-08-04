@@ -20,7 +20,12 @@ class ResultError(Exception):
         super().__init__(message + "; result: " + str(result))
         self.result = result
 
+class ServerError(ResultError):
+    def __init__(self, result: 'Result'):
+        super().__init__(result, "Server error")
+
 class TransactionError(ResultError):
+    """transaction aborted"""
     def __init__(self, result: 'Result'):
         super().__init__(result, "Transaction error")
 
@@ -61,7 +66,8 @@ class Result:
         return self
 
     def ok_or_throw(self):
-        self.throw_if(lambda: self.state != ServerState.OK, TransactionError(self))
+        self.throw_if(lambda: self.state == ServerState.ERROR or self.state == ServerState.DOWN, ServerError(self))
+        self.throw_if(lambda: self.state == ServerState.ABORT, TransactionError(self))
         return self
 
 def run_once(f):

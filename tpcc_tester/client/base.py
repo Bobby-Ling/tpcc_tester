@@ -120,7 +120,7 @@ class DBClient(ABC):
     def append_record(self, sql: str, result: Result) -> None:
         # log result_str
         self.sql_logger.info(f"{sql}")
-        self.sql_logger.info(f"{''.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
+        self.sql_logger.info(f"{'\n'.join([f'-- {line}' for line in result.result_str.split('\n') if line])}\n")
         # log data
         self.sql_logic_logger.info(f"{sql}")
         # 对result.data的每一行按字符串顺序排序后输出
