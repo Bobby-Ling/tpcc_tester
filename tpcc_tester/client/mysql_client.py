@@ -76,6 +76,11 @@ class MySQLClient(DBClient):
             result = Result(ServerState.OK, meta_data, data, result_str, raw_data, sql)
             # self.logger.debug("exec sql: %s, result: %s", sql, result)
             return result
+        except pymysql.err.OperationalError as e:
+            # Deadlock found when trying to get lock; try restarting transaction
+            if e.args[0] == 1213:
+                return Result(ServerState.ABORT, [], [], str(e), e, sql)
+            raise e
         except Exception as e:
             self.logger.exception(f"Error executing SQL: {sql} error: {e}")
             return Result(ServerState.ERROR, [], [], str(e), e, sql)
