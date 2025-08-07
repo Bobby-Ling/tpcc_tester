@@ -3,14 +3,16 @@ import time
 import pathlib
 from pathlib import Path
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from tpcc_tester.client.base import *
-from tpcc_tester.common import ResultEmpty, ServerError, TransactionError, setup_logging
+from tpcc_tester.common import ResultEmpty, ServerError, TpccState, TransactionError, setup_logging
 from tpcc_tester.db.table_layouts import *
 from tpcc_tester.client import *
 from tpcc_tester.util import *
 from tpcc_tester.record.record import *
 from tpcc_tester.config import get_config
+
 
 config = get_config()
 
@@ -34,14 +36,14 @@ tables_info = [
 
 class TpccDriver:
     @staticmethod
-    def from_type(client_type: ClientType, scale: int, recorder: Recorder = None):
+    def from_type(client_type: ClientType, scale: int, recorder: Recorder = None, global_lock: LockBase = None):
         from tpcc_tester.driver.rmdb_driver import RMDBDriver
         from tpcc_tester.driver.mysql_driver import MySQLDriver
 
         if client_type == ClientType.RMDB:
-            return RMDBDriver(RMDBClient(), scale, recorder)
+            return RMDBDriver(RMDBClient(global_lock=global_lock), scale, recorder)
         elif client_type == ClientType.MYSQL:
-            return MySQLDriver(MySQLClient(), scale, recorder)
+            return MySQLDriver(MySQLClient(global_lock=global_lock), scale, recorder)
         else:
             raise ValueError(f'Invalid client type: {client_type}')
 
@@ -66,6 +68,14 @@ class TpccDriver:
     def load_data(self) -> bool:
         pass
 
+    @staticmethod
+    def redirect_tqdm(func):
+        def wrapper(*args, **kwargs):
+            with logging_redirect_tqdm():
+                return func(*args, **kwargs)
+        return wrapper
+
+    # @redirect_tqdm
     def run_test(self, txns, txn_prob=[10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23]):
         # self.logger.info(duration)
         # self.logger.info('Test')
@@ -87,11 +97,12 @@ class TpccDriver:
 
         t_start = time.time()
 
-        for i in tqdm(range(txns), desc=f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}===\n"):
+        # print(f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}===")
+        for i in tqdm(range(txns), desc=""):
             txn = get_choice(txn_prob)
-            ret = ServerState.ABORT
+            ret = TpccState.Error
 
-            while ret == ServerState.ABORT:
+            while ret != TpccState.OK:
                 if txn == 0:  # NewOrder
                     w_id = get_w_id(config.CNT_W)
                     d_id = get_d_id()  # 获得地区id，1～10的随机数
@@ -149,9 +160,11 @@ class TpccDriver:
                 if ret == ServerState.ABORT:
                     if self._recorder:
                         self._recorder.put_txn(txn, t2 - t1, False)
-                else:
+                elif ret == TpccState.OK:
                     if self._recorder:
                         self._recorder.put_txn(txn, t2 - t1, True)
+                # else:
+                #     self.logger.warning(f"transaction state: {ret}")
 
         # for i in range(txns):
         #     txn = get_choice(txn_prob)
@@ -243,7 +256,7 @@ class TpccDriver:
         for sql_file in sql_files:
             self.send_file(f"{sql_dir}/{sql_file}")
 
-    def count_and_check(self, table, count_as, expected_count, count_type):
+    def count_and_check(self, table: str, count_as: str, expected_count: int, count_type: str):
         """
         A helper function to count and check the result.
 
@@ -255,7 +268,7 @@ class TpccDriver:
         :return: None
         """
         count_result = 0
-        res = self._client.select(table=table, col=(COUNT(alias=count_as),))
+        res = self._client.select(table=[table], col=(COUNT(alias=count_as),))
         count_result = int(res.data[0][0])
         if count_result != expected_count:
             self.logger.info(f'failed, {count_type}: {count_result}, expecting: {expected_count}')
@@ -270,21 +283,21 @@ class TpccDriver:
     def transaction_handling(func: Callable[..., ServerState]):
         def wrapper(self: 'TpccDriver', *args, **kwargs):
             self.logger.info(f">>>")
+            res = TpccState.OK
             try:
                 res = func(self, *args, **kwargs)
-                return res
+                return TpccState.OK
             except ResultEmpty as e:
                 self.logger.warning(f"Result is empty; error: {e}")
-                res = ServerState.ABORT
+                res = TpccState.ClientAbort
                 self._client.abort()
             except TransactionError as e:
                 self.logger.warning(f"Transaction aborted; error: {e}")
                 # self._client.abort()
-                res = ServerState.ABORT
+                res = TpccState.ServerAbort
             except ServerError as e:
                 self.logger.warning(f"Server error; error: {e}")
-                res = ServerState.ERROR
-                raise e
+                res = TpccState.Error
             except Exception as e:
                 self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
                 exit(-1)
@@ -302,7 +315,7 @@ class TpccDriver:
             for w_id in range(1, config.W_ID_MAX):
                 for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
-                                 table=DISTRICT,
+                                 table=[DISTRICT],
                                  col=(D_NEXT_O_ID,),  # 加逗号，否则会被认为是字符串，而不是元组
                                  where=[(D_W_ID, EQ, w_id),
                                         (D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -310,7 +323,7 @@ class TpccDriver:
                     d_next_o_id = int(res.data[0][0])
 
                     res = self._client.select(
-                                 table=ORDERS,
+                                 table=[ORDERS],
                                  col=(MAX(O_ID),),
                                  where=[(O_W_ID, EQ, w_id),
                                         (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -318,7 +331,7 @@ class TpccDriver:
                     max_o_id = int(res.data[0][0])
 
                     res = self._client.select(
-                                 table=NEW_ORDERS,
+                                 table=[NEW_ORDERS],
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
                                         (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -335,7 +348,7 @@ class TpccDriver:
             for w_id in range(1, config.W_ID_MAX):
                 for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
-                                 table=NEW_ORDERS,
+                                 table=[NEW_ORDERS],
                                  col=(COUNT(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
                                         (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -343,7 +356,7 @@ class TpccDriver:
                     num_no_o_id = int(res.data[0][0])
 
                     res = self._client.select(
-                                 table=NEW_ORDERS,
+                                 table=[NEW_ORDERS],
                                  col=(MAX(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
                                         (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -351,7 +364,7 @@ class TpccDriver:
                     max_no_o_id = int(res.data[0][0])
 
                     res = self._client.select(
-                                 table=NEW_ORDERS,
+                                 table=[NEW_ORDERS],
                                  col=(MIN(NO_O_ID),),
                                  where=[(NO_W_ID, EQ, w_id),
                                         (NO_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -368,7 +381,7 @@ class TpccDriver:
             for w_id in range(1, config.W_ID_MAX):
                 for d_id in range(1, config.D_ID_MAX):
                     res = self._client.select(
-                                 table=ORDERS,
+                                 table=[ORDERS],
                                  col=(SUM(O_OL_CNT),),
                                  where=[(O_W_ID, EQ, w_id),
                                         (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -376,7 +389,7 @@ class TpccDriver:
                     sum_o_ol_cnt = int(float(res.data[0][0]))
 
                     res = self._client.select(
-                                 table=ORDER_LINE,
+                                 table=[ORDER_LINE],
                                  col=(COUNT(OL_O_ID),),
                                  where=[(OL_W_ID, EQ, w_id),
                                         (OL_D_ID, EQ, d_id)]).is_not_empty_or_throw()
@@ -398,7 +411,7 @@ class TpccDriver:
         self.logger.info("consistency checking 2...")
         try:
             res = self._client.select(
-                         table=ORDERS,
+                         table=[ORDERS],
                          col=(COUNT(alias='count_orders'),),
                          ).is_not_empty_or_throw()
 
@@ -408,7 +421,7 @@ class TpccDriver:
                 return True
             self.logger.error(
                 f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={config.CNT_ORDERS}")
-            raise
+            raise Exception(f"error: {cnt_orders}, {cnt_new_orders}")
         except Exception as e:
             self.error_logger.exception(f"Exception occurred; error: {e}")
             self.logger.warning("consistency checking 2 error!")
@@ -429,7 +442,7 @@ class TpccDriver:
         # phase 1
         # 检索仓库（warehouse）税率、区域（district）税率和下一个可用订单号。
         res = self._client.select(
-                        table=DISTRICT,
+                        table=[DISTRICT],
                         col=(D_TAX, D_NEXT_O_ID),
                         where=[(D_ID, EQ, d_id),
                             (D_W_ID, EQ, w_id)]).is_not_empty_or_throw()
@@ -440,12 +453,12 @@ class TpccDriver:
 
         self._client.update(
                   table=DISTRICT,
-                  row=(D_NEXT_O_ID, d_next_o_id + 1),
+                  row=[(D_NEXT_O_ID, d_next_o_id + 1)],
                   where=[(D_ID, EQ, d_id), (D_W_ID, EQ, w_id)]).ok_or_throw()
 
         res = self._client.select(
-                        col=(C_DISCOUNT, C_LAST, C_CREDIT, W_TAX),
                         table=[CUSTOMER, WAREHOUSE],
+                        col=(C_DISCOUNT, C_LAST, C_CREDIT, W_TAX),
                         where=[(W_ID, EQ, w_id), (C_W_ID, EQ, W_ID), (C_D_ID, EQ, d_id), (C_ID, EQ, c_id)]
                         ).is_not_empty_or_throw()
 
@@ -468,15 +481,15 @@ class TpccDriver:
         # phase 3
         for i in range(ol_cnt):
             res = self._client.select(
-                            table=ITEM,
+                            table=[ITEM],
                             col=(I_PRICE, I_NAME, I_DATA),
-                            where=(I_ID, EQ, ol_i_id[i])).is_not_empty_or_throw()
+                            where=[(I_ID, EQ, ol_i_id[i])]).is_not_empty_or_throw()
             # TPC-C 规范要求, 大约有 1% 的概率, 输入的商品ID是无效的. 在这种情况下, 整个事务必须 回滚 (Abort)
             i_price, i_name, i_data = res.data[0]
             i_price = float(i_price)
 
             res = self._client.select(
-                            table=STOCK,
+                            table=[STOCK],
                             col=(
                                 S_QUANTITY, S_DIST_01, S_DIST_02, S_DIST_03, S_DIST_04, S_DIST_05, S_DIST_06,
                                 S_DIST_07,
@@ -536,19 +549,19 @@ class TpccDriver:
         self._client.begin()
         # self.logger.info('+ Payment')
         res = self._client.select(
-                        table=WAREHOUSE,
+                        table=[WAREHOUSE],
                         col=(W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_YTD),
-                        where=(W_ID, EQ, w_id)).is_not_empty_or_throw()
+                        where=[(W_ID, EQ, w_id)]).is_not_empty_or_throw()
 
         w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_ytd = res.data[0]
         # w_ytd = eval(w_ytd)
         self._client.update(
                   table=WAREHOUSE,
-                  row=(W_YTD, W_YTD + '+' + str(h_amount)),
-                  where=(W_ID, EQ, w_id)).ok_or_throw()
+                  row=[(W_YTD, W_YTD + '+' + str(h_amount))],
+                  where=[(W_ID, EQ, w_id)]).ok_or_throw()
 
         res = self._client.select(
-                        table=DISTRICT,
+                        table=[DISTRICT],
                         col=(D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_YTD),
                         where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
@@ -557,14 +570,14 @@ class TpccDriver:
         # d_ytd = eval(d_ytd)
         self._client.update(
                   table=DISTRICT,
-                  row=(D_YTD, D_YTD + '+' + str(h_amount)),
+                  row=[(D_YTD, D_YTD + '+' + str(h_amount))],
                   where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).ok_or_throw()
 
         if type(c_query) == str:
             c_query = "'" + c_query + "'"
 
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE,
                                     C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,
                                     C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
@@ -578,7 +591,7 @@ class TpccDriver:
 
         else:
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE,
                                     C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,
                                     C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
@@ -602,7 +615,7 @@ class TpccDriver:
                   where=[(C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id), (C_ID, EQ, c_id)]).ok_or_throw()
         if c_credit == 'BC':
             res = self._client.select(
-                                table=CUSTOMER,
+                                table=[CUSTOMER],
                                 col=(C_DATA,),
                                 where=[(C_ID, EQ, c_id),
                                         (C_W_ID, EQ, c_w_id),
@@ -611,7 +624,7 @@ class TpccDriver:
                         + res.data[0][0])[0:config.DATA_MAX]
             self._client.update(
                       table=CUSTOMER,
-                      row=(C_DATA, "'" + c_data + "'"),
+                      row=[(C_DATA, "'" + c_data + "'")],
                       where=[(C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id), (C_ID, EQ, c_id)]).ok_or_throw()
 
         # 4 blank space
@@ -640,7 +653,7 @@ class TpccDriver:
             c_query = "'" + c_query + "'"
             # 首先查询客户数量
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(COUNT(C_ID, "count_c_id"),),
                             where=[(C_LAST, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
@@ -654,7 +667,7 @@ class TpccDriver:
 
             # 查询客户信息, 按 c_first 排序
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(C_ID, C_BALANCE, C_FIRST, C_MIDDLE, C_LAST),
                             where=[(C_LAST, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
@@ -669,7 +682,7 @@ class TpccDriver:
 
         else:
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(C_ID, C_BALANCE, C_FIRST, C_MIDDLE, C_LAST),
                             where=[(C_ID, EQ, c_query),
                                     (C_W_ID, EQ, w_id),
@@ -680,7 +693,7 @@ class TpccDriver:
 
         # 查询最新的订单
         res = self._client.select(
-                        table=ORDERS,
+                        table=[ORDERS],
                         col=(O_ID, O_ENTRY_D, O_CARRIER_ID),
                         where=[(O_W_ID, EQ, w_id),
                             (O_D_ID, EQ, d_id),
@@ -699,7 +712,7 @@ class TpccDriver:
 
         # 查询订单行
         res = self._client.select(  # ol_i_id,ol_supply_w_id,ol_quantity,ol_amount,ol_delivery_d
-                        table=ORDER_LINE,
+                        table=[ORDER_LINE],
                         col=(OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D),
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
@@ -722,7 +735,7 @@ class TpccDriver:
         # o_carrier_id = dat['o_carrier_id']
         for d_id in range(1, 11):
             res = self._client.select(
-                            table=NEW_ORDERS,
+                            table=[NEW_ORDERS],
                             col=(MIN(NO_O_ID),),
                             where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id)],
                             # order_by=NO_O_ID,
@@ -735,7 +748,7 @@ class TpccDriver:
                       where=[(NO_W_ID, EQ, w_id), (NO_D_ID, EQ, d_id), (NO_O_ID, EQ, o_id)]).ok_or_throw()
 
             res = self._client.select(
-                            table=ORDERS,
+                            table=[ORDERS],
                             col=(O_C_ID,),
                             where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).is_not_empty_or_throw()
             o_c_id = res.data[0][0]
@@ -743,16 +756,16 @@ class TpccDriver:
 
             self._client.update(
                       table=ORDERS,
-                      row=(O_CARRIER_ID, o_carrier_id),
+                      row=[(O_CARRIER_ID, o_carrier_id)],
                       where=[(O_ID, EQ, o_id), (O_W_ID, EQ, w_id), (O_D_ID, EQ, d_id)]).ok_or_throw()
 
             res = self._client.select(
-                            table=ORDER_LINE,
+                            table=[ORDER_LINE],
                             where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).is_not_empty_or_throw()
             order_lines = res.data
 
             res = self._client.select(
-                            table=ORDER_LINE,
+                            table=[ORDER_LINE],
                             col=(SUM(OL_AMOUNT),),
                             where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id), (OL_O_ID, EQ, o_id)]).is_not_empty_or_throw()
             ol_amount = float(res.data[0][0])
@@ -760,12 +773,12 @@ class TpccDriver:
             for line in order_lines:
                 self._client.update(
                           table=ORDER_LINE,
-                          row=(OL_DELIVERY_D, "'" + current_time() + "'"),
+                          row=[(OL_DELIVERY_D, "'" + current_time() + "'")],
                           where=[(OL_W_ID, EQ, w_id), (OL_D_ID, EQ, d_id),
                                  (OL_O_ID, EQ, int(line[0]))]).ok_or_throw()
 
             res = self._client.select(
-                            table=CUSTOMER,
+                            table=[CUSTOMER],
                             col=(C_BALANCE, C_DELIVERY_CNT),
                             where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).is_not_empty_or_throw()
             c_balance, c_delivery_cnt = res.data[0]
@@ -791,7 +804,7 @@ class TpccDriver:
         self._client.begin()
         # self.logger.info('+ Stock Level')
         res = self._client.select(
-                        table=DISTRICT,
+                        table=[DISTRICT],
                         col=(D_NEXT_O_ID,),
                         where=[(D_W_ID, EQ, w_id), (D_ID, EQ, d_id)]).is_not_empty_or_throw()
 
@@ -799,7 +812,7 @@ class TpccDriver:
 
         # self.logger.info("d_next_o_id", d_next_o_id)
         res = self._client.select(
-                        table=ORDER_LINE,
+                        table=[ORDER_LINE],
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
                             (OL_O_ID, GE, d_next_o_id - 20),
@@ -813,7 +826,7 @@ class TpccDriver:
         low_stock = 0
         for item in items:
             res = self._client.select(
-                            table=STOCK,
+                            table=[STOCK],
                             col=(S_QUANTITY,),
                             where=[(S_I_ID, EQ, item),
                                 (S_W_ID, EQ, w_id),
@@ -822,7 +835,7 @@ class TpccDriver:
             cur_quantity = int(res.data[0][0])
             # low_stock += eval(cur_quantity)
         # low_stock = self._client.select(
-        #                     table=STOCK,
+        #                     table=[STOCK],
         #                     col=S_QUANTITY,
         #                     where=[(S_W_ID,eq,w_id),(S_I_ID,eq,ol_i_id),(S_QUANTITY,lt,level)])
         self._client.commit()

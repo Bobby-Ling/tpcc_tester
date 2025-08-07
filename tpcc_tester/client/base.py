@@ -3,8 +3,9 @@ import logging
 from enum import Enum
 from abc import ABC, abstractmethod
 from multiprocessing.synchronize import Lock as LockBase
+from typing import Any, Callable, List, Optional, Tuple, Union, final
 
-from tpcc_tester.common import ServerState, Result, get_global_lock, setup_logging
+from tpcc_tester.common import ServerState, Result, setup_logging
 
 # Operator
 ALL = '*'
@@ -175,14 +176,7 @@ class DBClient(ABC):
         return self.send_tcl("ABORT;")
 
     @final
-    def select(self, table, col=ALL, where=False, order_by=False, asc=False):
-        if type(table) != list:
-            table = [table]
-        # if type(col) != list:
-        #     col = [col]
-        if where and type(where) != list:
-            where = [where]
-
+    def select(self, table: List[str], col: Union[str, Tuple[str, ...]]=ALL, where: Optional[List[Tuple[str, str, str]]] = None, order_by: Optional[str] = None, asc: bool = False):
         param = []
         if where:
             param = [ele[-1] for ele in where]
@@ -200,7 +194,7 @@ class DBClient(ABC):
 
 
     @final
-    def insert(self, table, rows):
+    def insert(self, table: str, rows: Tuple[Any, ...]):
         values = ''.join([VALUES, '(', ','.join(['%s' for i in range(len(rows))]), ')'])
         sql = ' '.join([INSERT, "into", table, values, ';'])
         for i in rows:
@@ -209,11 +203,7 @@ class DBClient(ABC):
 
 
     @final
-    def update(self, table, row, where=False):
-        if type(row) != list:
-            row = [row]
-        if type(where) != list:
-            where = [where]
+    def update(self, table: str, row: List[Tuple[str, str]], where: Optional[List[Tuple[str, str, str]]] = None):
         param = [ele[-1] for ele in where]
         gen = lambda ele: str(ele[0]) + str(ele[1]) + '%s'
         where = ' '.join([WHERE, AND.join([gen(ele) for ele in where])]) if where else ''
@@ -228,9 +218,7 @@ class DBClient(ABC):
         return self.send_dml(sql)
 
     @final
-    def delete(self, table, where):
-        if type(where) != list:
-            where = [where]
+    def delete(self, table: str, where: Optional[List[Tuple[str, str, str]]] = None):
         param = [ele[-1] for ele in where]
         gen = lambda ele: str(ele[0]) + str(ele[1]) + '%s'
         where = ' '.join([WHERE, AND.join([gen(ele) for ele in where])]) if where else ''

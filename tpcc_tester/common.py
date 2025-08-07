@@ -12,6 +12,12 @@ class ServerState(Enum):
     ABORT = "ABORT"
     ERROR = "ERROR"
 
+class TpccState(Enum):
+    OK = "OK"
+    Error = "Error"
+    ServerAbort = "ServerAbort"
+    ClientAbort = "ClientAbort"
+
 class ResultError(Exception):
     def __init__(self, result: 'Result', message: str):
         super().__init__(message + "; result: " + str(result))
@@ -141,10 +147,20 @@ def setup_global_logging():
 
 setup_global_logging()
 
+_loggers: List[logging.Logger] = []
+
+def get_loggers():
+    return _loggers
+
 def setup_logging(logger_name: str, propagate=True, console_level: int = logging.INFO, file_level: int = logging.DEBUG, console_formatter: Optional[str] = None, file_formatter: Optional[str] = None, log_file: Optional[str] = None) -> logging.Logger:
     logger = logging.getLogger(logger_name)
 
     if not logger.handlers:
+        from tpcc_tester.config import get_config
+        config = get_config()
+        if config.disable_logging:
+            console_level = logging.ERROR
+            file_level = logging.CRITICAL
         # https://docs.python.org/zh-cn/3.12/library/logging.html
         # foo.bar 默认会传递给 foo
         logger.propagate = propagate
@@ -162,5 +178,7 @@ def setup_logging(logger_name: str, propagate=True, console_level: int = logging
         logger.addHandler(file_handler)
 
         logger.setLevel(min(console_level, file_level))
+
+        _loggers.append(logger)
 
     return logger

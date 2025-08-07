@@ -107,7 +107,7 @@ class RMDBClient(DBClient):
 
     def _parse_query_result(self, result_str: str) -> List[List[Any]]:
         """解析查询结果字符串为结构化数据"""
-        if not result_str or 'Error' in result_str:
+        if not result_str or (('Error' in result_str) and ('|' not in result_str)):
             return []
 
         lines = result_str.strip().split('\n')
