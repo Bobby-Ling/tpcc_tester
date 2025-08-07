@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import logging
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import Callable, final
+from multiprocessing.synchronize import Lock as LockBase
 
 from tpcc_tester.common import ServerState, Result, get_global_lock, setup_logging
 
@@ -51,9 +51,10 @@ class DBClient(ABC):
         else:
             raise ValueError(f'Invalid client type: {client_type}')
 
-    def __init__(self, db: str, port: int):
+    def __init__(self, db: str, port: int, global_lock: LockBase = None):
         self.db = db
         self.port = port
+        self.global_lock = global_lock
         self.logger = setup_logging(__name__)
         #
         self.sql_logger = setup_logging(
@@ -72,6 +73,9 @@ class DBClient(ABC):
             file_formatter='%(message)s',
             log_file=f'{self.logger.name}.log.logic.sql'
         )
+
+    def set_global_lock(self, global_lock: LockBase):
+        self.global_lock = global_lock
 
     @abstractmethod
     def connect(self) -> ServerState:
@@ -95,16 +99,10 @@ class DBClient(ABC):
     @staticmethod
     def with_global_lock(func: Callable[..., Result]):
         def wrapper(self: 'DBClient', *args, **kwargs):
-            from tpcc_tester.config import get_config
-            config = get_config()
-            if not config.global_lock:
+            if self.global_lock is None:
                 return func(self, *args, **kwargs)
-            lock = get_global_lock("tpcc_tester")
-            lock.acquire(timeout=100)
-            # self.logger.debug(f"lock acquired")
-            result = func(self, *args, **kwargs)
-            lock.release()
-            # self.logger.debug(f"lock released")
+            with self.global_lock:
+                result = func(self, *args, **kwargs)
             return result
         return wrapper
 

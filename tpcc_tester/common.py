@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, List, Any, Optional
 from pathlib import Path
-import os
-
-from filelock import FileLock
 
 class ServerState(Enum):
     OK = "OK"
@@ -167,8 +164,3 @@ def setup_logging(logger_name: str, propagate=True, console_level: int = logging
         logger.setLevel(min(console_level, file_level))
 
     return logger
-
-
-def get_global_lock(lock_name: str, timeout: int = 1):
-    lock_file_path = f"/tmp/{lock_name}_{os.getpid()}.lock"
-    return FileLock(lock_file_path, timeout=timeout)

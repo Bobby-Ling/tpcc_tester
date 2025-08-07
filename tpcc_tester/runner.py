@@ -1,6 +1,8 @@
+import multiprocessing
 import time
 from typing import List
 from multiprocessing import Process
+from multiprocessing.synchronize import Lock as LockBase
 import pathlib
 import sys
 
@@ -53,14 +55,14 @@ class TestRunner:
         # driver.load()  # 加载csv数据到9张表
         driver.delay_close()
 
-    def test(self, tid, txns=150, txn_prob=None, seed: int=42):
+    def test(self, tid, txns=150, txn_prob=None, seed: int=42, global_lock: LockBase = None):
         self.logger.info(f'+ Test_{tid} Begin(txns: {txns}, txn_prob: {txn_prob}, seed: {seed})')
         # Driver每个线程一个
         # random seed 不会从父进程复制
         # https://152334h.github.io/blog/multiprocessing-and-random/
         import random
         random.seed(seed + tid)
-        driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=self.recorder)
+        driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=self.recorder, global_lock=global_lock)
         try:
             driver.run_test(txns, txn_prob)
         except KeyboardInterrupt:
@@ -74,6 +76,8 @@ def main():
 
     recorder = get_recorder_instance()
     runner = TestRunner(recorder, config.client_type)
+
+    global_lock = multiprocessing.Lock() if config.global_lock else None
 
     if config.clean:
         print("clean all tables!!!")
@@ -96,7 +100,7 @@ def main():
         if config.rw:
             for i in range(config.thread_num):
                 process_list.append(
-                    Process(target=runner.test, args=(i + 1, config.rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], config.seed)))
+                    Process(target=runner.test, args=(i + 1, config.rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], config.seed, global_lock)))
                 process_list[i].start()
 
             for i in range(config.thread_num):
@@ -105,7 +109,7 @@ def main():
         process_list = []
         if config.ro:
             for i in range(config.thread_num):
-                process_list.append(Process(target=runner.test, args=(i + 1, config.ro, [0, 0, 0, 0.5, 0.5], config.seed)))
+                process_list.append(Process(target=runner.test, args=(i + 1, config.ro, [0, 0, 0, 0.5, 0.5], config.seed, global_lock)))
                 process_list[i].start()
 
             for i in range(config.thread_num):

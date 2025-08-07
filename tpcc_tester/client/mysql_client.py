@@ -1,14 +1,14 @@
 from pathlib import Path
 from typing import override
 import pymysql
-
+from multiprocessing.synchronize import Lock as LockBase
 from .base import DBClient
 from tpcc_tester.common import ServerState, Result
 
 class MySQLClient(DBClient):
     def __init__(self, db: str = "tpcc_test", port: int = 3306, host: str = "localhost",
-                 user: str = "root", password: str = "123123"):
-        super().__init__(db, port)
+                 user: str = "root", password: str = "123123", global_lock: LockBase = None):
+        super().__init__(db, port, global_lock)
         self.host = host
         self.user = user
         self.password = password

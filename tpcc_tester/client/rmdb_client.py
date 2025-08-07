@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from multiprocessing.synchronize import Lock as LockBase
 import socket
 from typing import Any, List
 from typing import override
@@ -11,8 +11,8 @@ class RMDBClient(DBClient):
     MAX_MEM_BUFFER_SIZE = 8192
     HOST = '127.0.0.1'
 
-    def __init__(self, db: str = "rmdb", port: int = int(os.getenv("RMDB_PORT", "8765"))):
-        super().__init__(db, port)
+    def __init__(self, db: str = "rmdb", port: int = int(os.getenv("RMDB_PORT", "8765")), global_lock: LockBase = None):
+        super().__init__(db, port, global_lock)
         self.socket = None
 
     @staticmethod
