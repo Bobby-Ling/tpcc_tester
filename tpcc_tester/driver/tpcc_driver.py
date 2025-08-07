@@ -802,7 +802,7 @@ class TpccDriver:
                         table=ORDER_LINE,
                         where=[(OL_W_ID, EQ, w_id),
                             (OL_D_ID, EQ, d_id),
-                            (OL_O_ID, LT, d_next_o_id - 20),
+                            (OL_O_ID, GE, d_next_o_id - 20),
                             (OL_O_ID, LT, d_next_o_id)]).is_not_empty_or_throw()
 
         order_lines = res.data
