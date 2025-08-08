@@ -157,7 +157,7 @@ class TpccDriver:
                 # if ret != SQLState.ABORT:
                 #     put_txn(lock, txn, t2 - t1, True)
 
-                if ret == ServerState.ABORT:
+                if ret == TpccState.ServerAbort:
                     if self._recorder:
                         self._recorder.put_txn(txn, t2 - t1, False)
                 elif ret == TpccState.OK:
