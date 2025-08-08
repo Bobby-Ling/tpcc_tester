@@ -306,7 +306,7 @@ class TpccDriver:
         return wrapper
 
     def consistency_check(self):
-        self.logger.info("consistency checking...")
+        print("consistency checking...")
 
         w_id = 0
         d_id = 0
@@ -343,7 +343,7 @@ class TpccDriver:
                             f"d_next_o_id={d_next_o_id}, max(o_id)={max_o_id}, max(no_o_id)={max_no_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
-            self.logger.info("consistency check for district, orders and new_orders pass!")
+            print("consistency check for district, orders and new_orders pass!")
 
             for w_id in range(1, config.W_ID_MAX):
                 for d_id in range(1, config.D_ID_MAX):
@@ -376,7 +376,7 @@ class TpccDriver:
                             f"count(no_o_id)={num_no_o_id}, max(no_o_id)={max_no_o_id}, min(no_o_id)={min_no_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
-            self.logger.info("consistency check for new_orders pass!")
+            print("consistency check for new_orders pass!")
 
             for w_id in range(1, config.W_ID_MAX):
                 for d_id in range(1, config.D_ID_MAX):
@@ -401,14 +401,14 @@ class TpccDriver:
                             f"sum(o_ol_cnt)={sum_o_ol_cnt}, count(ol_o_id)={num_ol_o_id} when d_id={d_id} and w_id={w_id}")
                         raise Exception(f"error: {w_id}, {d_id}")
 
-            self.logger.info("consistency check for orders and order_line pass!")
+            print("consistency check for orders and order_line pass!")
 
         except Exception as e:
             self.error_logger.exception(f"Exception occurred; error: {e}")
             self.logger.warning("consistency checking error!")
 
     def consistency_check2(self, cnt_new_orders):
-        self.logger.info("consistency checking 2...")
+        print("consistency checking 2...")
         try:
             res = self._client.select(
                          table=[ORDERS],
@@ -417,7 +417,7 @@ class TpccDriver:
 
             cnt_orders = int(res.data[0][0])
             if cnt_orders == config.CNT_ORDERS + cnt_new_orders:
-                self.logger.info("all pass!")
+                print("all pass!")
                 return True
             self.logger.error(
                 f"count(*)={cnt_orders}, count(new_orders)={cnt_new_orders} when origin orders={config.CNT_ORDERS}")
