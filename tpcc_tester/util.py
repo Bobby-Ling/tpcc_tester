@@ -37,12 +37,12 @@ def rand_perm(max):
 
 
 def NURand(A, x, y, C):
-    return ((random.randrange(0, A) | random.randrange(x, y)) + C) % (y - x + 1) + x
+    return ((random.randint(0, A) | random.randint(x, y)) + C) % (y - x + 1) + x
 
 def get_c_last(k=1000, run=False):
     C = _C_RUN if run else _C_LOAD
     if k >= 1000:
-        k = NURand(255, 0, 1000, C)
+        k = NURand(255, 0, 999, C)
     return ''.join([_names[k // 100], _names[(k // 10) % 10], _names[k % 10]])
 
 
@@ -52,7 +52,7 @@ def current_time():
     if not hasattr(current_time, 'start_time'):
         current_time.start_time = datetime.datetime(2024, 1, 1, 12, 0, 0)
         current_time.counter = 0
-    
+
     # Increment time by one second for each call
     current_time.counter += 1
     new_time = current_time.start_time + datetime.timedelta(seconds=current_time.counter)
