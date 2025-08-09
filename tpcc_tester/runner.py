@@ -1,10 +1,12 @@
 import multiprocessing
 import time
 from typing import List
-from multiprocessing import Process
+from concurrent.futures import ProcessPoolExecutor, Future
 from multiprocessing.synchronize import Lock as LockBase
 import pathlib
 import sys
+
+from tpcc_tester.record.process_record import ProcessTxnRecorder
 
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
@@ -22,9 +24,7 @@ config = get_config()
 
 # TestRunner只需要一个就行
 class TestRunner:
-    def __init__(self, recorder: Recorder, client_type: ClientType):
-        # Recorder是全局唯一的
-        self.recorder = recorder
+    def __init__(self, client_type: ClientType):
         self.client_type = client_type
         self.logger = setup_logging(f"{__name__}")
 
@@ -40,7 +40,7 @@ class TestRunner:
 
     def prepare(self):
         # Driver是每次任务一个
-        driver = TpccDriver.from_type(self.client_type, scale=1, recorder=self.recorder)
+        driver = TpccDriver.from_type(self.client_type, scale=1, recorder=None)
         driver.build()  # 创建9个tables
         # driver.send_sql_from_dir(f'{project_dir}/../../tpcc-generator/tpcc_sql/')
         # driver.send_file(f'{project_dir}/../../tpcc-generator/demo.sql')
@@ -62,20 +62,25 @@ class TestRunner:
         # https://152334h.github.io/blog/multiprocessing-and-random/
         import random
         random.seed(seed + tid)
-        driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=self.recorder, global_lock=global_lock)
+        if config.analyze:
+            recorder = ProcessTxnRecorder(f'{tid}')
+        else:
+            recorder = None
+
+        driver = TpccDriver.from_type(self.client_type, scale=config.CNT_W, recorder=recorder, global_lock=global_lock)
         try:
             driver.run_test(txns, txn_prob)
         except KeyboardInterrupt:
             self.logger.info(f'Test_{tid} Canceled')
         self.logger.info(f'- Test_{tid} Finished')
         driver.delay_close()
+        return recorder
 
 # useage: python runner.py --prepare --thread 8 --rw 150 --ro 150 --analyze
 def main():
     print(f"config: {config}")
 
-    recorder = get_recorder_instance()
-    runner = TestRunner(recorder, config.client_type)
+    runner = TestRunner(config.client_type)
 
     global_lock = multiprocessing.Lock() if config.global_lock else None
 
@@ -94,35 +99,40 @@ def main():
     t1 = 0
     t2 = 0
     t3 = 0
+    futures: List[Future] = []
     if config.thread_num:
         t1 = time.time()
-        process_list: List[Process] = []
         if config.rw:
-            for i in range(config.thread_num):
-                process_list.append(
-                    Process(target=runner.test, args=(i + 1, config.rw, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], config.seed, global_lock)))
-                process_list[i].start()
+            with ProcessPoolExecutor(max_workers=config.thread_num) as executor:
+                for i in range(config.thread_num):
+                    future = executor.submit(runner.test, i + 1, config.rw // config.thread_num, [10 / 23, 10 / 23, 1 / 23, 1 / 23, 1 / 23], config.seed, global_lock)
+                    futures.append(future)
 
-            for i in range(config.thread_num):
-                process_list[i].join()
         t2 = time.time()
-        process_list = []
         if config.ro:
-            for i in range(config.thread_num):
-                process_list.append(Process(target=runner.test, args=(i + 1, config.ro, [0, 0, 0, 0.5, 0.5], config.seed, global_lock)))
-                process_list[i].start()
+            with ProcessPoolExecutor(max_workers=config.thread_num) as executor:
+                for i in range(config.thread_num):
+                    future = executor.submit(runner.test, 1, config.ro // config.thread_num, [0, 0, 0, 0.5, 0.5], config.seed, global_lock)
+                    futures.append(future)
 
-            for i in range(config.thread_num):
-                process_list[i].join()
         t3 = time.time()
 
-    new_order_success = recorder.output_result()
+    if config.analyze:
+        records: List[ProcessTxnRecorder] = []
+
+        for future in futures:
+            records.append(future.result())
+
+        all_records = ProcessTxnRecorder.merge_records(records)
+        all_records.save()
+        new_order_success = all_records.output_result()
 
     if config.validate:
         driver = TpccDriver.from_type(config.client_type, scale=config.warehouse, recorder=None)
         driver.consistency_check()
 
-        driver.consistency_check2(new_order_success)
+        if config.analyze:
+            driver.consistency_check2(new_order_success)
 
     if config.analyze:
         print(f'total time of rw txns: {t2 - t1}')

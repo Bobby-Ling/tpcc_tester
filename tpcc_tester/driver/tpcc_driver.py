@@ -2,6 +2,7 @@ import re
 import time
 import pathlib
 from pathlib import Path
+from tpcc_tester.record.process_record import ProcessTxnRecorder, TpccTransactionType
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
@@ -36,7 +37,7 @@ tables_info = [
 
 class TpccDriver:
     @staticmethod
-    def from_type(client_type: ClientType, scale: int, recorder: Recorder = None, global_lock: LockBase = None):
+    def from_type(client_type: ClientType, scale: int, recorder: ProcessTxnRecorder = None, global_lock: LockBase = None):
         from tpcc_tester.driver.rmdb_driver import RMDBDriver
         from tpcc_tester.driver.mysql_driver import MySQLDriver
 
@@ -47,7 +48,7 @@ class TpccDriver:
         else:
             raise ValueError(f'Invalid client type: {client_type}')
 
-    def __init__(self, client: DBClient, scale: int, recorder: Recorder = None):
+    def __init__(self, client: DBClient, scale: int, recorder: ProcessTxnRecorder = None):
         self._scale = scale
         self._client = client
         self._recorder = recorder
@@ -95,15 +96,15 @@ class TpccDriver:
         query_cus = 0
         threshold = 0
 
-        t_start = time.time()
+        t_start = time.time_ns()
 
         # print(f"===txn_prob: {[f"{prob:.2f}"for prob in txn_prob]}===")
         for i in tqdm(range(txns), desc=""):
-            txn = get_choice(txn_prob)
+            txn = TpccTransactionType(get_choice(txn_prob))
             ret = TpccState.Error
 
             while ret != TpccState.OK:
-                if txn == 0:  # NewOrder
+                if txn == TpccTransactionType.NewOrder:  # NewOrder
                     w_id = get_w_id(config.CNT_W)
                     d_id = get_d_id()  # 获得地区id，1～10的随机数
                     c_id = get_c_id()  # 获得客户id，1～3000的随机数
@@ -111,58 +112,58 @@ class TpccDriver:
                     ol_supply_w_id = get_ol_supply_w_id(w_id, self._scale, len(ol_i_id))  # 为新订单中每个商品选择一个供应仓库，当前设定就一个供应仓库
                     ol_quantity = get_ol_quantity(len(ol_i_id))  # 为新订单中每个商品设置购买数量
 
-                    t1 = time.time()
+                    t1 = time.time_ns()
                     ret = self.do_new_order(w_id, d_id, c_id, ol_i_id, ol_supply_w_id, ol_quantity)
-                    t2 = time.time()
-                    if self._recorder:
-                        self._recorder.put_new_order(t2 - t_start)
+                    t2 = time.time_ns()
+                    # if self._recorder:
+                    #     self._recorder.put_new_order(t2 - t_start)
 
-                elif txn == 1:  # Payment
+                elif txn == TpccTransactionType.Payment:  # Payment
                     w_id = get_w_id(config.CNT_W)
                     d_id = get_d_id()  # 获得地区id，1～10的随机数
                     query_cus = query_cus_by(True)
                     h_amount = get_h_amount()
                     c_w_id, c_d_id = get_c_w_id_d_id(w_id, d_id, self._scale)  # 获得客户所属的仓库id和地区id
 
-                    t1 = time.time()
+                    t1 = time.time_ns()
                     ret = self.do_payment(w_id, d_id, c_w_id, c_d_id, query_cus, h_amount)
-                    t2 = time.time()
+                    t2 = time.time_ns()
 
-                elif txn == 2:  # Delivery
+                elif txn == TpccTransactionType.Delivery:  # Delivery
                     w_id = get_w_id(config.CNT_W)
                     o_carrier_id = get_o_carrier_id()
 
-                    t1 = time.time()
+                    t1 = time.time_ns()
                     ret = self.do_delivery(w_id, o_carrier_id)
-                    t2 = time.time()
+                    t2 = time.time_ns()
 
-                elif txn == 3:  # OrderStatus
+                elif txn == TpccTransactionType.OrderStatus:  # OrderStatus
                     w_id = get_w_id(config.CNT_W)
                     d_id = get_d_id()  # 获得地区id，1～10的随机数
                     query_cus = query_cus_by()
 
-                    t1 = time.time()
+                    t1 = time.time_ns()
                     ret = self.do_order_status(w_id, d_id, query_cus)
-                    t2 = time.time()
+                    t2 = time.time_ns()
 
-                elif txn == 4:  # StockLevel
+                elif txn == TpccTransactionType.StockLevel:  # StockLevel
                     w_id = get_w_id(config.CNT_W)
                     d_id = get_d_id()  # 获得地区id，1～10的随机数
                     threshold = get_level_threshold()
 
-                    t1 = time.time()
+                    t1 = time.time_ns()
                     ret = self.do_stock_level(w_id, d_id, threshold)
-                    t2 = time.time()
+                    t2 = time.time_ns()
 
                 # if ret != SQLState.ABORT:
                 #     put_txn(lock, txn, t2 - t1, True)
 
                 if ret == TpccState.ServerAbort:
                     if self._recorder:
-                        self._recorder.put_txn(txn, t2 - t1, False)
+                        self._recorder.put_txn(txn, t1 - t_start, t2 - t_start, False)
                 elif ret == TpccState.OK:
                     if self._recorder:
-                        self._recorder.put_txn(txn, t2 - t1, True)
+                        self._recorder.put_txn(txn, t1 - t_start, t2 - t_start, True)
                 # else:
                 #     self.logger.warning(f"transaction state: {ret}")
 
