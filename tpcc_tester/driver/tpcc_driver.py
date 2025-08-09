@@ -301,7 +301,7 @@ class TpccDriver:
                 res = TpccState.Error
             except Exception as e:
                 self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
-                exit(-1)
+                # exit(-1)
             self.logger.info(f"<<<")
             return res
         return wrapper
