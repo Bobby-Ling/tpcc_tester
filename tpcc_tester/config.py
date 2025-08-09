@@ -65,6 +65,7 @@ class Config:
     warehouse: int = 50
     disable_logging: bool = False
     global_lock: bool = False
+    output_file_on: bool = False
 
     CNT_W = warehouse
     CNT_ITEM = 100000
@@ -98,6 +99,7 @@ class Config:
         parser.add_argument('-w', '--warehouse', type=int, default=50, help='Warehouse number')
         parser.add_argument('-l', '--disable-logging', action='store_true', help='Disable logging')
         parser.add_argument('-g', '--global-lock', action='store_true', help='Enable global lock (at most one send_cmd at a time)')
+        parser.add_argument('-o', '--output-file-on', action='store_true', help='Enable output file on')
 
         from tpcc_tester.client.base import ClientType
 
@@ -114,6 +116,7 @@ class Config:
         self.warehouse: int = args.warehouse or self.warehouse
         self.disable_logging: bool = args.disable_logging or self.disable_logging
         self.global_lock: bool = args.global_lock or self.global_lock
+        self.output_file_on: bool = args.output_file_on or self.output_file_on
 
         self.CNT_W = self.warehouse
         self.CNT_ITEM = 100000
