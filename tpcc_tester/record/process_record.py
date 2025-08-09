@@ -72,20 +72,23 @@ class ProcessTxnRecorder:
         df = self.to_df()
         # 按事务类型分组并计算统计信息
         result_df = df.groupby(['type_name']).agg({
-            'time': 'mean',
+            'time': ['mean', 'sum'],
             'success': ['sum', 'count']
         })
 
-        result_df.columns = ['avg_time(ns)', 'success', 'total']
+        result_df.columns = ['avg_time(ns)', 'total_time(ns)', 'success', 'total']
         result_df = result_df.reset_index()
 
         # 计算rollback_rate
         result_df['fail'] = result_df['total'] - result_df['success']
-        result_df['rollback_rate(%)'] = (result_df['fail'] / result_df['total']) * 100
+        result_df['rbk_rate(%)'] = (result_df['fail'] / result_df['total']) * 100
 
         # time.time_ns() -> ms
         result_df['avg_time(ms)'] = result_df['avg_time(ns)'] / 1_000_000.0
         result_df.drop(columns=['avg_time(ns)'], inplace=True)
+
+        result_df['total_time(s)'] = result_df['total_time(ns)'] / 1_000_000_000.0
+        result_df.drop(columns=['total_time(ns)'], inplace=True)
 
         statistics_file = f'{base_dir.absolute()}/result/statistics.csv'
         result_df.to_csv(statistics_file, index=False, sep ='\t')
@@ -106,3 +109,7 @@ class ProcessTxnRecorder:
         # 返回NewOrdersuccess量
         new_order_success = result_df[result_df['type_name'] == 'NewOrder']['success'].sum() if not result_df.empty else 0
         return int(new_order_success)
+
+# %%
+
+# %%
