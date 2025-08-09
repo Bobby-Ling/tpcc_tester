@@ -6,8 +6,6 @@ from multiprocessing.synchronize import Lock as LockBase
 import pathlib
 import sys
 
-from tpcc_tester.record.process_record import ProcessTxnRecorder
-
 file_path = pathlib.Path(__file__)
 file_dir = file_path.parent
 project_dir = file_dir
@@ -15,7 +13,7 @@ base_dir = '.'
 sys.path.append(str(project_dir.parent))
 
 from tpcc_tester.client import *
-from tpcc_tester.record.record import Recorder, get_recorder_instance
+from tpcc_tester.record.process_record import ProcessTxnRecorder
 from tpcc_tester.driver.tpcc_driver import TpccDriver
 from tpcc_tester.common import setup_logging
 from tpcc_tester.config import get_config
