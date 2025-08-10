@@ -103,7 +103,7 @@ class Config:
 
         from tpcc_tester.client.base import ClientType
 
-        args = parser.parse_args()
+        args, unknown = parser.parse_known_args()
         self.prepare: bool = args.prepare or self.prepare
         self.analyze: bool = args.analyze or self.analyze
         self.validate: bool = not args.no_validate and self.validate
