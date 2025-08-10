@@ -272,10 +272,10 @@ class TpccDriver:
         res = self._client.select(table=[table], col=(COUNT(alias=count_as),))
         count_result = int(res.data[0][0])
         if count_result != expected_count:
-            self.logger.info(f'failed, {count_type}: {count_result}, expecting: {expected_count}')
+            self.logger.error(f'failed, {count_type}: {count_result}, expecting: {expected_count}')
 
     def count_star(self):
-        self.logger.info("Count star...")
+        print("Count star...")
         # 遍历每个表的信息并进行检查
         for table, count_as, expected_count, count_type in tables_info:
             self.count_and_check(table, count_as, expected_count, count_type)
