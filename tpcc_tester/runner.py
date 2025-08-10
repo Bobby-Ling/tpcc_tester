@@ -80,7 +80,11 @@ def main():
 
     runner = TestRunner(config.client_type)
 
-    global_lock = multiprocessing.Lock() if config.global_lock else None
+    if config.global_lock:
+        m = multiprocessing.Manager()
+        global_lock = m.Lock()
+    else:
+        global_lock = None
 
     if config.clean:
         print("clean all tables!!!")
