@@ -71,7 +71,7 @@ class RMDBClient(DBClient):
                 return ServerState.DOWN
 
         except Exception as e:
-            self.logger.error(f"Failed to connect to RMDB: {e}")
+            self.logger.error(f"Failed to connect to RMDB: {e}, port: {self.port}")
             return ServerState.DOWN
 
     @DBClient.log_record
