@@ -2,10 +2,21 @@ import datetime
 import random
 import string
 
-_names = ['BAR', 'OUGHT', 'ABLE', 'PRI', 'PRES', 'ESE', 'ANTI', 'CALLY', 'ATION', 'EING']
-# _names = ['BARR', 'OUGH', 'ABLE', 'PRII', 'PRES', 'ESEE', 'ANTI', 'CALL', 'ATIO', 'EING']
-_C_LOAD = 42
-_C_RUN = 42
+# _names = ['BAR', 'OUGHT', 'ABLE', 'PRI', 'PRES', 'ESE', 'ANTI', 'CALLY', 'ATION', 'EING']
+_names = ['BARR', 'OUGH', 'ABLE', 'PRII', 'PRES', 'ESEE', 'ANTI', 'CALL', 'ATIO', 'EING']
+# _C_LOAD = 42
+# _C_RUN = 42
+
+# TPC-C 2.1.6.1: C is a run-time constant randomly chosen within [0 .. A]
+# Replicating the logic from random.cpp where C is generated once per run
+# and is different for different A values.
+C_LAST_LOAD = random.randint(0, 255)
+C_ID_LOAD = random.randint(0, 1023)
+C_OL_I_ID_LOAD = random.randint(0, 8191)
+
+C_LAST_RUN = random.randint(0, 255)
+C_ID_RUN = random.randint(0, 1023)
+C_OL_I_ID_RUN = random.randint(0, 8191)
 
 
 def rand_str(lower, upper=0):
@@ -27,7 +38,7 @@ def rand_digit(num):
 
 
 def zip_code():
-    rand_digit(4) + '11111'
+    return rand_digit(4) + '11111'
 
 
 def rand_perm(max):
@@ -40,7 +51,7 @@ def NURand(A, x, y, C):
     return ((random.randint(0, A) | random.randint(x, y)) + C) % (y - x + 1) + x
 
 def get_c_last(k=1000, run=False):
-    C = _C_RUN if run else _C_LOAD
+    C = C_LAST_RUN if run else C_LAST_LOAD
     if k >= 1000:
         k = NURand(255, 0, 999, C)
     return ''.join([_names[k // 100], _names[(k // 10) % 10], _names[k % 10]])
@@ -61,13 +72,13 @@ def current_time():
 
 
 def get_c_id():
-    return NURand(1023, 1, 3000, C=_C_RUN)
+    return NURand(1023, 1, 3000, C=C_ID_RUN)
 
 
 def get_ol_i_id():
     ol_cnt = random.randrange(5, 16)
     rbk = random.randrange(100)
-    ret = [NURand(8191, 1, 100000, C=_C_RUN) for i in range(ol_cnt)]
+    ret = [NURand(8191, 1, 100000, C=C_OL_I_ID_RUN) for i in range(ol_cnt)]
     # if rbk == 0:
     #     ret[-1] = 100001  # unused item number
     return ret
