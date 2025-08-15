@@ -158,7 +158,7 @@ class TpccDriver:
                 # if ret != SQLState.ABORT:
                 #     put_txn(lock, txn, t2 - t1, True)
 
-                if ret == TpccState.ServerAbort:
+                if ret == TpccState.ServerAbort or ret == TpccState.ClientAbort:
                     if self._recorder:
                         self._recorder.put_txn(txn, t1 - t_start, t2 - t_start, False)
                 elif ret == TpccState.OK:
@@ -286,7 +286,12 @@ class TpccDriver:
             self.logger.info(f">>>")
             res = TpccState.OK
             try:
+                self._client.begin()
                 res = func(self, *args, **kwargs)
+                # if random.random() < 0.5:
+                #     self._client.abort()
+                #     return TpccState.ClientAbort
+                self._client.commit()
                 return TpccState.OK
             except ResultEmpty as e:
                 self.logger.warning(f"Result is empty; error: {e}")
@@ -298,6 +303,7 @@ class TpccDriver:
                 res = TpccState.ServerAbort
             except ServerError as e:
                 self.logger.warning(f"Server error; error: {e}")
+                self._client.abort()
                 res = TpccState.Error
             except Exception as e:
                 self.logger.exception(f"Error: {e}, function: {func.__name__}, args: {args}, kwargs: {kwargs}")
@@ -438,7 +444,7 @@ class TpccDriver:
         s_data = ''
 
         # transcation
-        self._client.begin()
+        # self._client.begin()
         # self.logger.info('+ New Order')
         # phase 1
         # 检索仓库（warehouse）税率、区域（district）税率和下一个可用订单号。
@@ -535,7 +541,7 @@ class TpccDriver:
 
         total_amount *= (1 - c_discount) * (1 + w_tax + d_tax)
 
-        self._client.commit()
+        # self._client.commit()
         # self.logger.info('- New Order')
         return ServerState.OK
 
@@ -547,7 +553,7 @@ class TpccDriver:
         c_payment_cnt = 0
         c_credit = 'GC'
         c_id = 0
-        self._client.begin()
+        # self._client.begin()
         # self.logger.info('+ Payment')
         res = self._client.select(
                         table=[WAREHOUSE],
@@ -577,19 +583,41 @@ class TpccDriver:
         if type(c_query) == str:
             c_query = "'" + c_query + "'"
 
-            res = self._client.select(
-                            table=[CUSTOMER],
-                            col=(C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE,
-                                    C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,
-                                    C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
-                            where=[(C_LAST, EQ, c_query),
-                                    (C_W_ID, EQ, c_w_id),
-                                    (C_D_ID, EQ, c_d_id)],
-                            # order_by=C_FIRST,
-                            # asc=True
-                            ).is_not_empty_or_throw()
-            res = res.data[0]
+            # TPC-C 2.5.2.2: The customer is selected based on customer last name.
+            # Get the count of matching customers
+            res_count = self._client.select(
+                table=[CUSTOMER],
+                col=(COUNT(C_ID),),
+                where=[(C_LAST, EQ, c_query), (C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id)]
+            ).is_not_empty_or_throw()
+            customer_count = int(res_count.data[0][0])
 
+            # Select all matching customers ordered by first name
+            res_customers = self._client.select(
+                table=[CUSTOMER],
+                col=(C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE,
+                     C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,
+                     C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT),
+                where=[(C_LAST, EQ, c_query), (C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id)],
+                order_by=C_FIRST,
+                asc=True
+            ).is_not_empty_or_throw()
+
+            # TPC-C specifies "the row at position (n+1)/2 rounded up..."
+            # For a 0-indexed list, this is (customer_count - 1) // 2
+            middle_index = (customer_count - 1) // 2
+            customer_data = res_customers.data[middle_index]
+
+            # Unpack customer data into local variables
+            c_id, c_first, c_midele, c_last, \
+                c_street_1, c_street_2, c_city, c_state, \
+                c_zip, c_phone, c_since, \
+                c_credit, c_credit_lim, c_discount, c_balance, c_ytd_payment, c_payment_cnt = customer_data
+
+            c_id = int(c_id)
+            c_balance = float(c_balance)
+            c_ytd_payment = float(c_ytd_payment)
+            c_payment_cnt = int(c_payment_cnt)
         else:
             res = self._client.select(
                             table=[CUSTOMER],
@@ -610,8 +638,9 @@ class TpccDriver:
             c_payment_cnt = int(c_payment_cnt)
         self._client.update(
                   table=CUSTOMER,
-                  row=[(C_BALANCE, c_balance + h_amount),
-                       (C_YTD_PAYMENT, c_ytd_payment + 1),
+                  # doubt：这里应该是加，因为支付是客户给银行钱，所以是减少余额，增加ytd_payment
+                  row=[(C_BALANCE, c_balance - h_amount),
+                       (C_YTD_PAYMENT, c_ytd_payment + h_amount),
                        (C_PAYMENT_CNT, c_payment_cnt + 1)],
                   where=[(C_W_ID, EQ, c_w_id), (C_D_ID, EQ, c_d_id), (C_ID, EQ, c_id)]).ok_or_throw()
         if c_credit == 'BC':
@@ -635,7 +664,7 @@ class TpccDriver:
                   rows=(c_id, c_d_id, c_w_id, d_id, w_id, "'" + current_time() + "'", h_amount,
                         "'" + h_data + "'")).ok_or_throw()
 
-        self._client.commit()
+        # self._client.commit()
         # self.logger.info('- Payment')
         return ServerState.OK
 
@@ -643,7 +672,7 @@ class TpccDriver:
     def do_order_status(self, w_id: int, d_id: int, c_query: int | str) -> ServerState:
         self.logger.info(f"do_order_status, w_id: {w_id}, d_id: {d_id}, c_query: {c_query}")
         c_id = 0 # 不会查出任何结果
-        self._client.begin()
+        # self._client.begin()
         # self.logger.info('+ Order Status')
         # 60% 执⾏
         if type(c_query) == str:
@@ -663,7 +692,7 @@ class TpccDriver:
             customer_count = int(res.data[0][0])
             if customer_count == 0:
                 # 没有找到客户, 应该abort事务
-                self._client.abort()
+                # self._client.abort()
                 return ServerState.ABORT
 
             # 查询客户信息, 按 c_first 排序
@@ -705,7 +734,7 @@ class TpccDriver:
 
         if len(res.data) == 0:
             # 该客户没有订单，应该abort事务
-            self._client.abort()
+            # self._client.abort()
             return ServerState.ABORT
 
         o_id, o_entry_id, o_carrier_id = res.data[0]
@@ -721,15 +750,15 @@ class TpccDriver:
 
         order_lines = res.data  # 获取所有订单行
 
-        self._client.commit()
+        # self._client.commit()
         # self.logger.info('- Order Status')
         return ServerState.OK
 
     @transaction_handling
     def do_delivery(self, w_id: int, o_carrier_id: int) -> ServerState:
         self.logger.info(f"do_delivery, w_id: {w_id}, o_carrier_id: {o_carrier_id}")
-        t1 = time.time()
-        self._client.begin()
+        # t1 = time.time()
+        # self._client.begin()
         # self.logger.info('+ Delivery')
         # dat = q.get()
         # w_id = dat['w_id']
@@ -791,8 +820,8 @@ class TpccDriver:
                       table=CUSTOMER,
                       row=[(C_BALANCE, c_balance + ol_amount), (C_DELIVERY_CNT, c_delivery_cnt + 1)],
                       where=[(C_W_ID, EQ, w_id), (C_D_ID, EQ, d_id), (C_ID, EQ, o_c_id)]).ok_or_throw()
-        self._client.commit()
-        t2 = time.time()
+        # self._client.commit()
+        # t2 = time.time()
         # put_txn(lock,Delivery,t2-t1,True)
         # self.logger.info('- Delivery')
 
@@ -802,7 +831,7 @@ class TpccDriver:
     @transaction_handling
     def do_stock_level(self, w_id: int, d_id: int, level: int) -> ServerState:
         self.logger.info(f"do_stock_level, w_id: {w_id}, d_id: {d_id}, level: {level}")
-        self._client.begin()
+        # self._client.begin()
         # self.logger.info('+ Stock Level')
         res = self._client.select(
                         table=[DISTRICT],
@@ -839,6 +868,6 @@ class TpccDriver:
         #                     table=[STOCK],
         #                     col=S_QUANTITY,
         #                     where=[(S_W_ID,eq,w_id),(S_I_ID,eq,ol_i_id),(S_QUANTITY,lt,level)])
-        self._client.commit()
+        # self._client.commit()
         # self.logger.info('- Stock Level')
         return ServerState.OK
